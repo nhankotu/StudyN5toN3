@@ -1,0 +1,15 @@
+{
+  "name": "nihongo-study",
+  "version": "2.0.0",
+  "description": "Website học tiếng Nhật nội bộ với Netlify Functions và MongoDB Atlas",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mongodb": "^6.10.0"
+  }
+}

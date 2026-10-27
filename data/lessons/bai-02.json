@@ -1,0 +1,27 @@
+{
+  "id": "n5-bai-02",
+  "title": "Bài 2 · Đồ vật xung quanh",
+  "level": "N5",
+  "book": "N5 cơ bản – dữ liệu minh họa",
+  "order": 2,
+  "vocabulary": [
+    {"id":"v01","japanese":"これ","reading":"これ","meaning":"Cái này (gần người nói)","example":"これは本です。","exampleMeaning":"Đây là quyển sách."},
+    {"id":"v02","japanese":"それ","reading":"それ","meaning":"Cái đó (gần người nghe)","example":"それはかばんです。","exampleMeaning":"Đó là cái cặp."},
+    {"id":"v03","japanese":"あれ","reading":"あれ","meaning":"Cái kia (xa cả hai)","example":"あれは何ですか。","exampleMeaning":"Kia là cái gì?"},
+    {"id":"v04","japanese":"本","reading":"ほん","meaning":"Sách","example":"これは日本語の本です。","exampleMeaning":"Đây là sách tiếng Nhật."},
+    {"id":"v05","japanese":"かばん","reading":"かばん","meaning":"Cặp, túi xách","example":"私のかばんです。","exampleMeaning":"Đây là cặp của tôi."},
+    {"id":"v06","japanese":"机","reading":"つくえ","meaning":"Bàn học, bàn làm việc","example":"机の上に本があります。","exampleMeaning":"Có quyển sách trên bàn."},
+    {"id":"v07","japanese":"何","reading":"なん／なに","meaning":"Cái gì","example":"これは何ですか。","exampleMeaning":"Đây là cái gì?"},
+    {"id":"v08","japanese":"辞書","reading":"じしょ","meaning":"Từ điển","example":"それは私の辞書です。","exampleMeaning":"Đó là từ điển của tôi."}
+  ],
+  "grammar": [
+    {"id":"g01","title":"Đại từ chỉ định これ・それ・あれ","pattern":"これは N です。","meaning":"Đây / đó / kia là N.","explanation":"これ: gần người nói; それ: gần người nghe; あれ: xa cả người nói và người nghe.","examples":[{"japanese":"これは辞書です。","meaning":"Đây là từ điển."},{"japanese":"あれは机です。","meaning":"Kia là bàn."}]},
+    {"id":"g02","title":"Sở hữu với の","pattern":"N1 の N2","meaning":"N2 của N1, hoặc N2 thuộc loại N1.","explanation":"の nối hai danh từ để chỉ sở hữu, nguồn gốc hoặc phân loại.","examples":[{"japanese":"これは私の本です。","meaning":"Đây là sách của tôi."},{"japanese":"日本語の辞書です。","meaning":"Đó là từ điển tiếng Nhật."}]},
+    {"id":"g03","title":"Hỏi với 何","pattern":"これは何ですか。","meaning":"Đây là cái gì?","explanation":"何 là từ nghi vấn 'cái gì'. Trong 何ですか thường đọc là なんですか.","examples":[{"japanese":"それは何ですか。","meaning":"Đó là cái gì?"}]}
+  ],
+  "kanji": [
+    {"id":"k01","character":"本","meaning":"Gốc; sách","onyomi":"ホン","kunyomi":"もと","examples":[{"word":"本","reading":"ほん","meaning":"sách"}]},
+    {"id":"k02","character":"何","meaning":"Gì, cái gì","onyomi":"カ","kunyomi":"なに、なん","examples":[{"word":"何時","reading":"なんじ","meaning":"mấy giờ"}]},
+    {"id":"k03","character":"語","meaning":"Ngôn ngữ, lời nói","onyomi":"ゴ","kunyomi":"かたる","examples":[{"word":"日本語","reading":"にほんご","meaning":"tiếng Nhật"}]}
+  ]
+}

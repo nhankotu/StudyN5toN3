@@ -1,0 +1,29 @@
+{
+  "id": "n5-bai-03",
+  "title": "Bài 3 · Địa điểm và vị trí",
+  "level": "N5",
+  "book": "N5 cơ bản – dữ liệu minh họa",
+  "order": 3,
+  "vocabulary": [
+    {"id":"v01","japanese":"ここ","reading":"ここ","meaning":"Ở đây","example":"ここは学校です。","exampleMeaning":"Đây là trường học."},
+    {"id":"v02","japanese":"そこ","reading":"そこ","meaning":"Ở đó (gần người nghe)","example":"そこは教室です。","exampleMeaning":"Đó là lớp học."},
+    {"id":"v03","japanese":"あそこ","reading":"あそこ","meaning":"Ở đằng kia","example":"あそこは図書館です。","exampleMeaning":"Đằng kia là thư viện."},
+    {"id":"v04","japanese":"どこ","reading":"どこ","meaning":"Ở đâu","example":"駅はどこですか。","exampleMeaning":"Nhà ga ở đâu?"},
+    {"id":"v05","japanese":"学校","reading":"がっこう","meaning":"Trường học","example":"学校へ行きます。","exampleMeaning":"Tôi đi đến trường."},
+    {"id":"v06","japanese":"図書館","reading":"としょかん","meaning":"Thư viện","example":"図書館で勉強します。","exampleMeaning":"Tôi học ở thư viện."},
+    {"id":"v07","japanese":"右","reading":"みぎ","meaning":"Bên phải","example":"右に曲がってください。","exampleMeaning":"Xin hãy rẽ phải."},
+    {"id":"v08","japanese":"左","reading":"ひだり","meaning":"Bên trái","example":"左に曲がってください。","exampleMeaning":"Xin hãy rẽ trái."},
+    {"id":"v09","japanese":"近く","reading":"ちかく","meaning":"Gần, khu vực gần","example":"駅はここから近いです。","exampleMeaning":"Nhà ga ở gần đây."}
+  ],
+  "grammar": [
+    {"id":"g01","title":"Hỏi vị trí bằng どこ","pattern":"N は どこですか。","meaning":"N ở đâu?","explanation":"Dùng どこ để hỏi vị trí hoặc địa điểm; kết thúc câu bằng ですか để lịch sự.","examples":[{"japanese":"トイレはどこですか。","meaning":"Nhà vệ sinh ở đâu?"}]},
+    {"id":"g02","title":"ここ・そこ・あそこ","pattern":"ここは N です。","meaning":"Đây / đó / kia là N (địa điểm).","explanation":"Ba từ này chỉ vị trí tùy khoảng cách với người nói và người nghe.","examples":[{"japanese":"ここは教室です。","meaning":"Đây là phòng học."}]},
+    {"id":"g03","title":"Trợ từ に chỉ nơi tồn tại","pattern":"場所 に N が あります。","meaning":"Có một vật ở địa điểm nào đó.","explanation":"に đánh dấu nơi tồn tại; あります dùng cho đồ vật, います dùng cho người hoặc động vật.","examples":[{"japanese":"机の上に本があります。","meaning":"Có quyển sách trên bàn."},{"japanese":"教室に先生がいます。","meaning":"Có giáo viên trong lớp."}]}
+  ],
+  "kanji": [
+    {"id":"k01","character":"校","meaning":"Trường học","onyomi":"コウ","kunyomi":"—","examples":[{"word":"学校","reading":"がっこう","meaning":"trường học"}]},
+    {"id":"k02","character":"右","meaning":"Bên phải","onyomi":"ウ、ユウ","kunyomi":"みぎ","examples":[{"word":"右","reading":"みぎ","meaning":"phải"}]},
+    {"id":"k03","character":"左","meaning":"Bên trái","onyomi":"サ","kunyomi":"ひだり","examples":[{"word":"左","reading":"ひだり","meaning":"trái"}]},
+    {"id":"k04","character":"駅","meaning":"Nhà ga","onyomi":"エキ","kunyomi":"—","examples":[{"word":"駅","reading":"えき","meaning":"nhà ga"}]}
+  ]
+}

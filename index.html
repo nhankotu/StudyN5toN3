@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f8f9fd" />
+  <meta name="description" content="Học tiếng Nhật qua từ vựng, flashcards, mẫu câu và chữ Hán. Nhập bài học bằng JSON, không cần AI hay tài khoản." />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>Nihongo Study — Học tiếng Nhật</title>
+</head>
+<body>
+  <div class="app-shell" id="app">
+    <aside class="sidebar" aria-label="Điều hướng">
+      <a class="brand" href="#vocabulary" aria-label="Nihongo Study">
+        <span class="brand-symbol">あ</span>
+        <span><strong>Nihongo<span class="brand-em">.</span></strong><small>Study Japanese</small></span>
+      </a>
+      <div class="side-group-label">KHÁM PHÁ</div>
+      <nav class="side-nav" id="sideNav">
+        <button class="nav-item" data-tab="vocabulary"><span class="nav-icon">単</span> Từ vựng <span class="nav-arrow">›</span></button>
+        <button class="nav-item" data-tab="practice"><span class="nav-icon">▣</span> Luyện tập <span class="nav-arrow">›</span></button>
+        <button class="nav-item" data-tab="grammar"><span class="nav-icon">文</span> Mẫu câu <span class="nav-arrow">›</span></button>
+        <button class="nav-item" data-tab="kanji"><span class="nav-icon">漢</span> Chữ Hán <span class="nav-arrow">›</span></button>
+      </nav>
+      <div class="side-group-label tools-label">KHO BÀI HỌC</div>
+      <button class="nav-item" data-tab="imports"><span class="nav-icon">📚</span> Kho bài học <span class="nav-arrow">›</span></button>
+      <div id="adminNavGroup" class="admin-nav-group" style="display:none">
+        <div class="side-group-label tools-label" style="margin-top:20px">QUẢN TRỊ</div>
+        <button class="nav-item" data-tab="users"><span class="nav-icon">👥</span> Quản lý tài khoản <span class="nav-arrow">›</span></button>
+      </div>
+      <div class="sidebar-bottom">
+        <span class="side-bottom-icon">✦</span>
+        <strong>Mỗi ngày một chút!</strong>
+        <p>学び続けよう。<br/>Kiên trì mỗi ngày nhé.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left"><span class="mobile-brand">あ</span><span class="breadcrumb">KHÔNG GIAN HỌC TẬP <span class="breadcrumb-dot">/</span> <b id="breadcrumbCurrent">Từ vựng</b></span></div>
+        <div class="topbar-right">
+          <span class="connection-pill" id="storageStatus"><span class="online-dot"></span> Lưu trên thiết bị</span>
+          <div class="user-pill" id="userPill" style="display:none">
+            <span class="user-badge-role" id="userBadgeRole">Admin</span>
+            <span class="user-name" id="userName">Quản trị viên</span>
+            <button class="btn-logout" id="btnLogout" data-action="logout" title="Đăng xuất khỏi thiết bị">↪ Đăng xuất</button>
+          </div>
+          <button class="top-import" data-tab="imports" title="Kho bài học & Thêm bài mới">📚 <span>Kho bài học</span></button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="hero" aria-label="Chào mừng">
+          <div class="hero-copy"><div class="hero-kicker">✳ HÀNH TRÌNH TIẾNG NHẬT CỦA BẠN</div><h1>少しずつ、<br/><span>毎日、上達。</span></h1><p>Mỗi ngày một chút, giỏi hơn mỗi ngày. Từ vựng, ngữ pháp và Kanji trong cùng một nơi.</p></div>
+          <div class="hero-art" aria-hidden="true"><div class="art-circle art-circle-one"></div><div class="art-circle art-circle-two"></div><span class="hero-kanji">日</span><span class="hero-mini">本 語</span><span class="hero-sparkle">✦</span></div>
+        </section>
+
+        <section class="metrics" id="metrics" aria-label="Thống kê tổng quan"></section>
+
+        <section class="work-area">
+          <div class="section-heading"><div><div class="eyebrow" id="sectionEyebrow">YOUR LIBRARY</div><h2 id="sectionTitle">Từ vựng của bạn</h2><p id="sectionDescription">Ôn từ vựng mỗi ngày.</p></div><div class="section-count" id="sectionCount"></div></div>
+          <div class="toolbar" id="toolbar"><label class="search-box" id="searchWrap"><span class="search-icon">⌕</span><input id="searchInput" type="search" placeholder="Tìm tiếng Nhật, phiên âm, nghĩa..." autocomplete="off" /><kbd>/</kbd></label><label class="select-wrap"><span>Bài học</span><select id="lessonSelect" aria-label="Lọc theo bài học"><option value="all">Tất cả bài học</option></select></label></div>
+          <div id="view" aria-live="polite"></div>
+        </section>
+        <footer class="footer">Nihongo Study <span>✦</span> Hệ thống học tiếng Nhật nội bộ • Lưu trữ offline</footer>
+      </div>
+    </main>
+    <nav class="mobile-nav" id="mobileNav" aria-label="Điều hướng trên điện thoại">
+      <button data-tab="vocabulary"><span class="mobile-nav-icon">単</span><small>Từ vựng</small></button>
+      <button data-tab="practice"><span class="mobile-nav-icon">▣</span><small>Luyện tập</small></button>
+      <button data-tab="grammar"><span class="mobile-nav-icon">文</span><small>Mẫu câu</small></button>
+      <button data-tab="kanji"><span class="mobile-nav-icon">漢</span><small>Chữ Hán</small></button>
+    </nav>
+  </div>
+  <div id="loginOverlay" class="login-overlay" style="display:none">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="brand-symbol">あ</span>
+        <div>
+          <h2>Nihongo<span class="brand-em">.</span></h2>
+          <small>HỆ THỐNG HỌC NỘI BỘ</small>
+        </div>
+      </div>
+      <p class="login-desc">Đăng nhập tài khoản để truy cập kho bài học và lưu trữ tiến độ cá nhân.</p>
+      <form id="loginForm" class="login-form">
+        <label class="login-field">
+          <span>TÊN ĐĂNG NHẬP</span>
+          <input type="text" id="loginUsername" placeholder="Ví dụ: admin hoặc tên tài khoản" required autocomplete="username" />
+        </label>
+        <label class="login-field">
+          <span>MẬT KHẨU</span>
+          <input type="password" id="loginPassword" placeholder="Nhập mật khẩu" required autocomplete="current-password" />
+        </label>
+        <div id="loginError" class="login-error" style="display:none"></div>
+        <button type="submit" class="button-primary login-submit-btn">Đăng nhập ngay</button>
+      </form>
+      <div class="login-meta">
+        <strong>✦ Tài khoản Quản trị mặc định:</strong>
+        <p>Tên đăng nhập: <code>admin</code> • Mật khẩu: <code>admin123</code></p>
+        <small>Chỉ tài khoản Quản trị viên mới có quyền tạo thêm tài khoản cho các thành viên khác.</small>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

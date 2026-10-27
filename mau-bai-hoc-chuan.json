@@ -1,0 +1,163 @@
+{
+  "_huong_dan_cho_nguoi_dung_va_ai": {
+    "muc_dich": "Mẫu bài học chuẩn cho ứng dụng Nihongo Study. Dùng để nhập trực tiếp vào web hoặc gửi cho AI (ChatGPT / Claude / Gemini) để chuyển đổi từ sách/giáo trình thành file JSON.",
+    "quy_tac_furigana": "Viết [cách đọc Hiragana] ngay sau chữ Hán. Ví dụ: 私[わたし], 行[い]きます, 日本語[にほんご], 先生[せんせい]. Ứng dụng sẽ tự động sinh chữ nhỏ <ruby><rt> trên đầu chữ Hán.",
+    "luu_y_quan_trong": "Mỗi bài học PHẢI có id duy nhất (ví dụ: bai-01, bai-02, n5-bai-05). Phải có ít nhất 1 trong 3 phần: vocabulary (từ vựng), grammar (ngữ pháp), kanji (chữ Hán)."
+  },
+  "id": "bai-01",
+  "title": "Bài 1 – Giới thiệu bản thân & Chào hỏi",
+  "level": "N5",
+  "book": "Minna no Nihongo I",
+  "order": 1,
+  "vocabulary": [
+    {
+      "id": "v01",
+      "japanese": "私[わたし]",
+      "reading": "わたし",
+      "meaning": "Tôi (đại từ nhân xưng ngôi thứ nhất)",
+      "example": "私[わたし]はベトナム人[じん]です。",
+      "exampleMeaning": "Tôi là người Việt Nam."
+    },
+    {
+      "id": "v02",
+      "japanese": "あなた",
+      "reading": "あなた",
+      "meaning": "Bạn, anh, chị (ngôi thứ hai)",
+      "example": "あなたはお名前[なまえ]は何[なん]ですか。",
+      "exampleMeaning": "Bạn tên là gì vậy?"
+    },
+    {
+      "id": "v03",
+      "japanese": "先生[せんせい]",
+      "reading": "せんせい",
+      "meaning": "Thầy giáo, cô giáo, bác sĩ",
+      "example": "田中[たなか]さんは日本語[にほんご]の先生[せんせい]です。",
+      "exampleMeaning": "Thầy Tanaka là giáo viên tiếng Nhật."
+    },
+    {
+      "id": "v04",
+      "japanese": "学生[がくせい]",
+      "reading": "がくせい",
+      "meaning": "Học sinh, sinh viên",
+      "example": "マイクさんは学生[がくせい]ではありません。",
+      "exampleMeaning": "Mike không phải là sinh viên."
+    },
+    {
+      "id": "v05",
+      "japanese": "会社員[かいしゃいん]",
+      "reading": "かいしゃいん",
+      "meaning": "Nhân viên công ty",
+      "example": "サントスさんは会社員[かいしゃいん]です。",
+      "exampleMeaning": "Anh Santos là nhân viên công ty."
+    }
+  ],
+  "grammar": [
+    {
+      "id": "g01",
+      "title": "N1 は N2 です",
+      "pattern": "N1 は N2 です。",
+      "meaning": "N1 là N2.",
+      "explanation": "Trợ từ は (đọc là wa) dùng để xác định chủ đề của câu. です đặt ở cuối câu khẳng định thể hiện sự lịch sự.",
+      "examples": [
+        {
+          "japanese": "私[わたし]は学生[がくせい]です。",
+          "meaning": "Tôi là sinh viên."
+        },
+        {
+          "japanese": "ワンさんは医者[いしゃ]です。",
+          "meaning": "Anh Wang là bác sĩ."
+        }
+      ]
+    },
+    {
+      "id": "g02",
+      "title": "N1 は N2 ではありません (じゃありません)",
+      "pattern": "N1 は N2 ではありません / じゃありません。",
+      "meaning": "N1 không phải là N2.",
+      "explanation": "Dạng phủ định lịch sự của です. Trong giao tiếp hàng ngày thường dùng じゃありません, trong văn viết hay phát biểu lịch sự dùng ではありません.",
+      "examples": [
+        {
+          "japanese": "サントスさんは先生[せんせい]ではありません。",
+          "meaning": "Anh Santos không phải là giáo viên."
+        }
+      ]
+    },
+    {
+      "id": "g03",
+      "title": "N1 は N2 ですか (Câu hỏi)",
+      "pattern": "N1 は N2 ですか。",
+      "meaning": "N1 có phải là N2 không?",
+      "explanation": "Thêm trợ từ か vào cuối câu để tạo thành câu nghi vấn. Trả lời: はい、N2 です (Vâng, đúng vậy) hoặc いいえ、N2 ではありません (Không, không phải).",
+      "examples": [
+        {
+          "japanese": "ミラーさんはアメリカ人[じん]ですか。…はい、アメリカ人[じん]です。",
+          "meaning": "Anh Miller có phải là người Mỹ không? ...Vâng, là người Mỹ."
+        }
+      ]
+    }
+  ],
+  "kanji": [
+    {
+      "id": "k01",
+      "character": "人",
+      "meaning": "Nhân (người)",
+      "onyomi": "ジン、ニン",
+      "kunyomi": "ひと",
+      "examples": [
+        {
+          "word": "日本人[にほんじん]",
+          "reading": "にほんじん",
+          "meaning": "Người Nhật"
+        },
+        {
+          "word": "三人[さんにん]",
+          "reading": "さんにん",
+          "meaning": "3 người"
+        },
+        {
+          "word": "あの人[ひと]",
+          "reading": "あのひと",
+          "meaning": "Người kia"
+        }
+      ]
+    },
+    {
+      "id": "k02",
+      "character": "日",
+      "meaning": "Nhật (mặt trời, ngày)",
+      "onyomi": "ニチ、ジツ",
+      "kunyomi": "ひ、か",
+      "examples": [
+        {
+          "word": "日曜日[にちようび]",
+          "reading": "にちようび",
+          "meaning": "Chủ nhật"
+        },
+        {
+          "word": "日本[にほん]",
+          "reading": "にほん",
+          "meaning": "Nhật Bản"
+        }
+      ]
+    },
+    {
+      "id": "k03",
+      "character": "本",
+      "meaning": "Bản (gốc rễ, quyển sách)",
+      "onyomi": "ホン",
+      "kunyomi": "もと",
+      "examples": [
+        {
+          "word": "本[ほん]",
+          "reading": "ほん",
+          "meaning": "Quyển sách"
+        },
+        {
+          "word": "山本[やまもと]さん",
+          "reading": "やまもとさん",
+          "meaning": "Anh/chị Yamamoto"
+        }
+      ]
+    }
+  ]
+}

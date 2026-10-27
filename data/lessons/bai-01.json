@@ -1,0 +1,28 @@
+{
+  "id": "n5-bai-01",
+  "title": "Bài 1 · Giới thiệu bản thân",
+  "level": "N5",
+  "book": "N5 cơ bản – dữ liệu minh họa",
+  "order": 1,
+  "vocabulary": [
+    {"id":"v01","japanese":"私","reading":"わたし","meaning":"Tôi","example":"私は学生です。","exampleMeaning":"Tôi là sinh viên."},
+    {"id":"v02","japanese":"あなた","reading":"あなた","meaning":"Bạn","example":"あなたは先生ですか。","exampleMeaning":"Bạn có phải là giáo viên không?"},
+    {"id":"v03","japanese":"学生","reading":"がくせい","meaning":"Học sinh, sinh viên","example":"田中さんは学生です。","exampleMeaning":"Anh/chị Tanaka là sinh viên."},
+    {"id":"v04","japanese":"先生","reading":"せんせい","meaning":"Thầy, cô; giáo viên","example":"山田さんは先生です。","exampleMeaning":"Anh/chị Yamada là giáo viên."},
+    {"id":"v05","japanese":"日本","reading":"にほん","meaning":"Nhật Bản","example":"日本へ行きます。","exampleMeaning":"Tôi đi Nhật Bản."},
+    {"id":"v06","japanese":"日本人","reading":"にほんじん","meaning":"Người Nhật","example":"私は日本人です。","exampleMeaning":"Tôi là người Nhật."},
+    {"id":"v07","japanese":"名前","reading":"なまえ","meaning":"Tên","example":"お名前は何ですか。","exampleMeaning":"Bạn tên gì?"},
+    {"id":"v08","japanese":"友達","reading":"ともだち","meaning":"Bạn bè","example":"田中さんは私の友達です。","exampleMeaning":"Tanaka là bạn của tôi."}
+  ],
+  "grammar": [
+    {"id":"g01","title":"N1 は N2 です","pattern":"N1 は N2 です。","meaning":"N1 là N2.","explanation":"Trợ từ は (đọc là wa) đánh dấu chủ đề. です dùng kết thúc câu lịch sự.","examples":[{"japanese":"私は学生です。","meaning":"Tôi là sinh viên."},{"japanese":"田中さんは先生です。","meaning":"Anh/chị Tanaka là giáo viên."}]},
+    {"id":"g02","title":"Câu hỏi với か","pattern":"N1 は N2 ですか。","meaning":"N1 có phải là N2 không?","explanation":"Thêm か vào cuối câu lịch sự để tạo câu hỏi; không nhất thiết đổi trật tự từ.","examples":[{"japanese":"あなたは学生ですか。","meaning":"Bạn có phải là sinh viên không?"}]},
+    {"id":"g03","title":"Trợ từ も","pattern":"N1 も N2 です。","meaning":"N1 cũng là N2.","explanation":"も có nghĩa là 'cũng', thay thế は khi nói một chủ thể có tính chất tương tự.","examples":[{"japanese":"私も学生です。","meaning":"Tôi cũng là sinh viên."}]}
+  ],
+  "kanji": [
+    {"id":"k01","character":"人","meaning":"Người","onyomi":"ジン、ニン","kunyomi":"ひと","examples":[{"word":"日本人","reading":"にほんじん","meaning":"người Nhật"}]},
+    {"id":"k02","character":"日","meaning":"Ngày, mặt trời","onyomi":"ニチ、ジツ","kunyomi":"ひ、か","examples":[{"word":"日本","reading":"にほん","meaning":"Nhật Bản"}]},
+    {"id":"k03","character":"学","meaning":"Học","onyomi":"ガク","kunyomi":"まなぶ","examples":[{"word":"学生","reading":"がくせい","meaning":"sinh viên"}]},
+    {"id":"k04","character":"生","meaning":"Sinh, sống","onyomi":"セイ、ショウ","kunyomi":"いきる、うまれる","examples":[{"word":"先生","reading":"せんせい","meaning":"giáo viên"}]}
+  ]
+}
