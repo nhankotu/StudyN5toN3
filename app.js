@@ -1,5 +1,5 @@
 import {
-  checkCloudHealth, isCloudActive,
+  checkCloudHealth, isCloudActive, restoreCloudSession, logoutCloud,
   cloudLogin, cloudGetUsers, cloudCreateUser, cloudResetPassword, cloudDeleteUser,
   cloudGetLessons, cloudSaveLessons, cloudDeleteLesson,
   cloudGetProgress, cloudSaveProgress,
@@ -39,6 +39,7 @@ const str = (v, fallback='') => typeof v === 'string' || typeof v === 'number' ?
 const list = v => Array.isArray(v) ? v : [];
 let toastTimer;
 let touchX = null, touchY = null, ignoreClickUntil = 0;
+let savingProgress = false;
 
 function notify(message) {
   const toast = $('toast'); toast.textContent = message; toast.classList.add('show');
@@ -374,7 +375,7 @@ function renderPractice() {
       <div class="study-aside-box">
         <h3>✦ Tiến độ ghi nhớ</h3>
         <div class="big-number">${known}<span style="font-size:15px;color:#aaa1d2"> / ${total}</span></div>
-        <p>Tài khoản: <strong>${h(state.currentUser?.name || state.currentUser?.username || 'Khách')}</strong>.<br/>Tiến độ học tập được đồng bộ đám mây.</p>
+        <p>Tài khoản: <strong>${h(state.currentUser?.name || state.currentUser?.username || 'Khách')}</strong>.<br/>${isCloudActive ? 'Tiến độ học tập được lưu trên đám mây.' : 'Tiến độ chỉ được lưu trên thiết bị này.'}</p>
       </div>
       <div class="study-aside-box study-tip">
         <h3>☀ Mẹo ghi nhớ &amp; Chế độ ôn</h3>
@@ -685,7 +686,7 @@ function renderImports() {
         <!-- THANH TÌM KIẾM BÀI HỌC -->
         <div class="lesson-search-bar">
           <span class="search-icon">⌕</span>
-          <input type="search" id="lessonSearchInput" placeholder="Tìm tên bài, mã bài, cấp độ N5/N4..." value="${h(state.lessonSearch)}" autocomplete="off" />
+          <input type="text" inputmode="search" id="lessonSearchInput" placeholder="Tìm tên bài, mã bài, cấp độ N5/N4..." value="${h(state.lessonSearch)}" autocomplete="off" />
           ${state.lessonSearch ? `<button class="btn-clear-search" data-action="clear-lesson-search" title="Xóa tìm kiếm">✕</button>` : ''}
         </div>
 
@@ -841,6 +842,7 @@ function nextCard(delta) {
 }
 
 async function markCard(rating) {
+  if (savingProgress) return;
   const cards = studyCards();
   const card = cards[state.flash.index];
   if (!card) return;
@@ -859,14 +861,18 @@ async function markCard(rating) {
     reviews: (old?.reviews || 0) + 1,
     updatedAt: Date.now()
   };
-  state.progress.set(progressKey, record);
-  state.progress.set(card.key, record);
-
   try {
+    savingProgress = true;
     await cloudSaveProgress(record);
   } catch (error) {
     console.error('Lỗi lưu tiến độ:', error);
+    notify('Không lưu được kết quả học: ' + error.message);
+    return;
+  } finally {
+    savingProgress = false;
   }
+  state.progress.set(progressKey, record);
+  state.progress.set(card.key, record);
 
   const nextLength = studyCards().length;
   state.flash.index = nextLength ? (nextLength === cards.length ? (state.flash.index + 1) % nextLength : Math.min(state.flash.index, nextLength - 1)) : 0;
@@ -957,7 +963,7 @@ async function handleAction(button) {
   if (action === 'mark') { await markCard(button.dataset.rating); return; }
   if (action === 'shuffle') { shuffleCards(); return; }
   if (action === 'toggle-reverse') { toggleReverse(); return; }
-  if (action === 'logout') { handleLogout(); return; }
+  if (action === 'logout') { await handleLogout(); return; }
   if (action === 'trigger-file-input') {
     const fi = $('fileInput');
     if (fi) fi.click();
@@ -1031,7 +1037,6 @@ async function handleAction(button) {
     if (!content) { notify('Hãy dán nội dung JSON trước.'); return; }
     try {
       await importPayload(JSON.parse(content), 'vùng dán');
-      $('jsonPaste').value = '';
     } catch (error) {
       notify('JSON không hợp lệ: ' + error.message);
     }
@@ -1116,6 +1121,8 @@ async function reloadUserProgress() {
     }
   } catch (err) {
     console.error('Không nạp được tiến độ:', err);
+    state.progress = new Map();
+    notify('Không tải được tiến độ học: ' + err.message);
   }
 }
 
@@ -1140,6 +1147,7 @@ function updateUserUI() {
   const overlay = $('loginOverlay');
   const userPill = $('userPill');
   const adminNav = $('adminNavGroup');
+  const mobileAdmin = $('mobileAdmin');
   if (state.currentUser) {
     overlay.style.display = 'none';
     userPill.style.display = 'flex';
@@ -1147,10 +1155,12 @@ function updateUserUI() {
     $('userBadgeRole').textContent = state.currentUser.role === 'admin' ? 'Quản trị' : 'Học viên';
     $('userBadgeRole').className = `user-badge-role ${state.currentUser.role === 'admin' ? 'role-admin' : 'role-user'}`;
     if (adminNav) adminNav.style.display = state.currentUser.role === 'admin' ? 'block' : 'none';
+    if (mobileAdmin) mobileAdmin.style.display = state.currentUser.role === 'admin' ? '' : 'none';
   } else {
     overlay.style.display = 'flex';
     userPill.style.display = 'none';
     if (adminNav) adminNav.style.display = 'none';
+    if (mobileAdmin) mobileAdmin.style.display = 'none';
   }
 }
 
@@ -1173,6 +1183,7 @@ async function handleLogin(e) {
 
     $('loginPassword').value = '';
     updateUserUI();
+    await reloadLessons();
     await reloadUserProgress();
     await loadUsersList();
     render();
@@ -1183,8 +1194,9 @@ async function handleLogin(e) {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   if (!confirm('Bạn có muốn đăng xuất khỏi ứng dụng không?')) return;
+  try { await logoutCloud(); } catch (error) { console.error('Không thu hồi được phiên:', error); }
   localStorage.removeItem('nihongo_session');
   state.currentUser = null;
   state.tab = 'vocabulary';
@@ -1252,11 +1264,13 @@ function setupListeners() {
   $('view').addEventListener('input', event => {
     if (event.target.id === 'lessonSearchInput') {
       state.lessonSearch = event.target.value;
+      const selectionStart = event.target.selectionStart;
+      const selectionEnd = event.target.selectionEnd;
       renderView();
       const input = $('lessonSearchInput');
       if (input) {
         input.focus();
-        input.setSelectionRange(input.value.length, input.value.length);
+        input.setSelectionRange(selectionStart, selectionEnd);
       }
     }
   });
@@ -1400,27 +1414,22 @@ async function start() {
     statusPill.innerHTML = '<span class="online-dot" style="background:#10b981"></span> MongoDB Cloud';
     statusPill.title = 'Đang kết nối trực tiếp với MongoDB Atlas (Dữ liệu dùng chung 10 máy)';
   } else {
-    statusPill.innerHTML = '<span class="online-dot" style="background:#f59e0b"></span> Lưu thiết bị';
-    statusPill.title = health.message || 'Chưa cấu hình MONGODB_URI hoặc đang chạy offline';
+    statusPill.innerHTML = '<span class="online-dot" style="background:#f59e0b"></span> Không kết nối DB';
+    statusPill.title = 'Không kết nối được cơ sở dữ liệu';
   }
 
   // 2. Nạp dữ liệu bài học
-  if (isCloudActive) {
-    await reloadLessons();
-  } else {
-    await initLocalAuth();
-    state.staticLessons = await loadStaticLessonsFallback();
-    const local = await getImportedLessons();
-    state.imported = local.map(l => normalizeLesson(l));
-    mergeLessons();
-  }
+  if (!isCloudActive) $('loginError').textContent = 'Không kết nối được cơ sở dữ liệu. Vui lòng liên hệ quản trị viên.';
+  if (!isCloudActive) $('loginError').style.display = 'block';
 
   // 3. Khôi phục phiên đăng nhập nếu có
   const savedSession = localStorage.getItem('nihongo_session');
   if (savedSession) {
     try {
-      const parsed = JSON.parse(savedSession);
+      const parsed = isCloudActive ? await restoreCloudSession() : null;
+      if (!parsed) throw new Error('Phiên đã hết hạn');
       state.currentUser = parsed;
+      if (isCloudActive) await reloadLessons();
       await reloadUserProgress();
       if (parsed.role === 'admin') await loadUsersList();
     } catch (e) {

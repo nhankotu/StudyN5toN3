@@ -3,6 +3,21 @@ const DB_NAME = 'nihongo-study-db';
 const DB_VERSION = 2;
 let dbPromise;
 export let isCloudActive = false;
+const tokenKey = 'nihongo_token';
+function apiFetch(url, options = {}) {
+  const token = localStorage.getItem(tokenKey);
+  return fetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+}
+export async function restoreCloudSession() {
+  if (!localStorage.getItem(tokenKey)) return null;
+  const response = await apiFetch('/api/auth/session');
+  if (!response.ok) { localStorage.removeItem(tokenKey); return null; }
+  return (await response.json()).user;
+}
+export async function logoutCloud() {
+  try { if (isCloudActive && localStorage.getItem(tokenKey)) await apiFetch('/api/auth/logout', { method: 'POST' }); }
+  finally { localStorage.removeItem(tokenKey); }
+}
 
 function openDB() {
   if (!('indexedDB' in window)) return Promise.reject(new Error('Trình duyệt không hỗ trợ IndexedDB.'));
@@ -60,12 +75,7 @@ export async function checkCloudHealth() {
 
 export async function cloudLogin(username, password) {
   if (!isCloudActive) {
-    // Fallback: tra cứu local IndexedDB
-    const user = await getUser(username);
-    if (!user) throw new Error('Tài khoản không tồn tại (Offline DB).');
-    const pHash = await hashPassword(password);
-    if (user.passwordHash !== pHash) throw new Error('Mật khẩu không chính xác.');
-    return { username: user.username, name: user.name || user.username, role: user.role };
+    throw new Error('Chưa kết nối được cơ sở dữ liệu. Vui lòng liên hệ quản trị viên.');
   }
 
   const res = await fetch('/api/auth/login', {
@@ -75,12 +85,13 @@ export async function cloudLogin(username, password) {
   });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Đăng nhập thất bại.');
+  localStorage.setItem(tokenKey, data.token);
   return data.user;
 }
 
 export async function cloudGetUsers() {
   if (!isCloudActive) return getUsers();
-  const res = await fetch('/api/auth/users');
+  const res = await apiFetch('/api/auth/users');
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể lấy danh sách người dùng.');
   return data.users;
@@ -92,7 +103,7 @@ export async function cloudCreateUser(user) {
     user.createdAt = Date.now();
     return putUser(user);
   }
-  const res = await fetch('/api/auth/users', {
+  const res = await apiFetch('/api/auth/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(user)
@@ -109,7 +120,7 @@ export async function cloudResetPassword(username, password) {
     user.passwordHash = await hashPassword(password);
     return putUser(user);
   }
-  const res = await fetch(`/api/auth/users/${encodeURIComponent(username)}/password`, {
+  const res = await apiFetch(`/api/auth/users/${encodeURIComponent(username)}/password`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password })
@@ -121,7 +132,7 @@ export async function cloudResetPassword(username, password) {
 
 export async function cloudDeleteUser(username) {
   if (!isCloudActive) return removeUser(username);
-  const res = await fetch(`/api/auth/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/auth/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể xóa tài khoản.');
   return data;
@@ -129,7 +140,7 @@ export async function cloudDeleteUser(username) {
 
 export async function cloudGetLessons() {
   if (!isCloudActive) return getImportedLessons();
-  const res = await fetch('/api/lessons');
+  const res = await apiFetch('/api/lessons');
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể tải bài học từ MongoDB.');
   return data.lessons;
@@ -144,7 +155,7 @@ export async function cloudSaveLessons(lessons, username = 'admin') {
     }
     return items.length;
   }
-  const res = await fetch('/api/lessons', {
+  const res = await apiFetch('/api/lessons', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lessons: items, username })
@@ -157,32 +168,29 @@ export async function cloudSaveLessons(lessons, username = 'admin') {
 export async function cloudDeleteLesson(id, username = '') {
   if (!isCloudActive) return removeLesson(id);
   const query = username ? `?username=${encodeURIComponent(username)}` : '';
-  const res = await fetch(`/api/lessons/${encodeURIComponent(id)}${query}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/lessons/${encodeURIComponent(id)}${query}`, { method: 'DELETE' });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể xóa bài học.');
   return data;
 }
 
 export async function cloudGetProgress(username) {
-  if (!isCloudActive) return getProgress();
-  const res = await fetch(`/api/progress?username=${encodeURIComponent(username)}`);
+  if (!isCloudActive) return (await getProgress()).filter(item => item.username === username);
+  const res = await apiFetch(`/api/progress?username=${encodeURIComponent(username)}`);
   const data = await res.json();
-  if (!res.ok || !data.ok) return [];
+  if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể tải tiến độ học tập.');
   return data.progress;
 }
 
 export async function cloudSaveProgress(record) {
   if (!isCloudActive) return putProgress(record);
-  try {
-    await fetch('/api/progress', {
+  const res = await apiFetch('/api/progress', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
     });
-  } catch (e) {
-    // Lưu dự phòng vào IndexedDB nếu mạng chập chờn
-    await putProgress(record);
-  }
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể lưu tiến độ học tập.');
 }
 
 // ======================== LOCAL INDEXEDDB ========================

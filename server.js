@@ -56,6 +56,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2. Phục vụ static files (Frontend)
+  const publicFiles = new Set(['/','/index.html','/styles.css','/app.js','/db.js','/sw.js','/manifest.webmanifest']);
+  if (!publicFiles.has(pathname) && !/^\/(?:assets|data)\/[a-zA-Z0-9_./-]+$/.test(pathname)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Không tìm thấy tệp yêu cầu.');
+    return;
+  }
   let filePath = path.join(__dirname, pathname === '/' ? 'index.html' : pathname);
   
   if (!fs.existsSync(filePath)) {

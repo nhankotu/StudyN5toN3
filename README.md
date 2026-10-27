@@ -5,7 +5,7 @@
 ## Chức năng chính
 
 1. **Hệ thống đăng nhập nội bộ & Phân quyền Admin:**
-   - Tài khoản Quản trị mặc định: `admin` / mật khẩu: `admin123`.
+   - Tài khoản quản trị đầu tiên được tạo từ biến môi trường `INITIAL_ADMIN_PASSWORD` khi cơ sở dữ liệu chưa có người dùng.
    - **Chỉ Quản trị viên** mới có quyền vào mục **Quản lý tài khoản** để tạo tài khoản cho thành viên khác, đổi mật khẩu hoặc xóa tài khoản.
    - Dữ liệu tài khoản lưu tập trung trên **MongoDB Atlas**, đăng nhập đồng thời trên cả điện thoại và máy tính.
 2. **Đồng bộ bài học và tiến độ học tập (Cloud Sync):**
@@ -43,13 +43,14 @@
 1. Mở file `.env` và dán chuỗi kết nối MongoDB của bạn vào:
    ```env
    MONGODB_URI=mongodb+srv://admin:Matkhau123!@cluster0.abcde.mongodb.net/nihongo_study?retryWrites=true&w=majority
+   INITIAL_ADMIN_PASSWORD=mat-khau-rieng-it-nhat-8-ky-tu
    PORT=8000
    ```
 2. Khởi động server:
    ```bash
    npm run dev
    ```
-3. Mở trình duyệt tại `http://localhost:8000` và đăng nhập với tài khoản `admin` / `admin123`.
+3. Mở trình duyệt tại `http://localhost:8000` và đăng nhập bằng `admin` và mật khẩu đã cấu hình. Nếu DB đã có người dùng, tài khoản hiện có được giữ nguyên.
 
 ---
 
@@ -61,8 +62,11 @@
    - Bấm **Add a variable**:
      - Key: `MONGODB_URI`
      - Value: *(Dán chuỗi kết nối MongoDB Atlas của bạn vào)*
+   - Với cơ sở dữ liệu mới, thêm `INITIAL_ADMIN_PASSWORD` có ít nhất 8 ký tự; xóa biến này sau khi tài khoản quản trị được tạo.
 3. Trigger deploy lại 1 lần để Netlify nhận biến môi trường.
 4. Mở đường link website Netlify của bạn trên điện thoại hoặc máy tính: Biểu tượng trạng thái sẽ hiện **🟢 MongoDB Cloud**, sẵn sàng cho toàn bộ thành viên cùng học!
+
+Chạy `npm test` để kiểm tra tự động và `npm run build` để tạo thư mục public cho Netlify. Ứng dụng yêu cầu kết nối MongoDB; không đồng bộ dữ liệu tạo khi mất mạng. Các tài khoản cũ có thể đăng nhập bằng mật khẩu hiện tại và sẽ được nâng cấp mã băm khi đăng nhập. Hãy đổi mật khẩu mặc định cũ nếu đã từng sử dụng.
 
 ---
 

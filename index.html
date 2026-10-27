@@ -49,6 +49,7 @@
             <button class="btn-logout" id="btnLogout" data-action="logout" title="Đăng xuất khỏi thiết bị">↪ Đăng xuất</button>
           </div>
           <button class="top-import" data-tab="imports" title="Kho bài học & Thêm bài mới">📚 <span>Kho bài học</span></button>
+          <button class="mobile-admin" id="mobileAdmin" data-tab="users" style="display:none" aria-label="Quản lý tài khoản">👥 <span>Tài khoản</span></button>
         </div>
       </header>
 
@@ -97,11 +98,7 @@
         <div id="loginError" class="login-error" style="display:none"></div>
         <button type="submit" class="button-primary login-submit-btn">Đăng nhập ngay</button>
       </form>
-      <div class="login-meta">
-        <strong>✦ Tài khoản Quản trị mặc định:</strong>
-        <p>Tên đăng nhập: <code>admin</code> • Mật khẩu: <code>admin123</code></p>
-        <small>Chỉ tài khoản Quản trị viên mới có quyền tạo thêm tài khoản cho các thành viên khác.</small>
-      </div>
+      <p class="login-meta">Liên hệ quản trị viên nếu bạn cần tài khoản hoặc hỗ trợ đăng nhập.</p>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

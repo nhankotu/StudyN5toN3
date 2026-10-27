@@ -98,5 +98,29 @@ rt{display:block;font-size:.52em;line-height:1.15;color:#705be4;font-weight:700;
 
 .upload-zone-button{margin-top:12px}
 
+/* Compact account controls and accessible forms on small screens. */
+.mobile-admin{display:none;border:0;background:#efeaff;color:#6049d0;border-radius:10px;min-height:42px;padding:8px 11px;font-weight:800;font-size:12px}
+.login-overlay{overflow-y:auto;align-items:safe center}
+.login-card{margin:auto}
+@media(max-width:850px){
+  .mobile-admin:not([style*="display: none"]){display:inline-flex;align-items:center;gap:5px}
+  .topbar-right{gap:8px;min-width:0}
+  .user-name{max-width:80px}
+}
+@media(max-width:570px){
+  .topbar{height:auto;min-height:67px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
+  .topbar-right{flex-wrap:wrap;justify-content:flex-end}
+  .mobile-admin span{display:none}
+  .user-name{max-width:64px}
+  .user-pill{padding-left:6px;gap:4px}
+  .user-badge-role{font-size:8px;padding:3px 5px}
+  .btn-logout{min-height:36px;padding:5px 7px}
+  .login-card{padding:26px 22px}
+  .login-field input,.user-field input,.user-field select,.search-box input,.lesson-search-bar input,textarea,.study-controls select{font-size:16px}
+  .user-card-item{flex-wrap:wrap}
+  .user-card-actions{flex-wrap:wrap}
+  .lesson-search-bar input{min-width:0}
+}
+
 
 
