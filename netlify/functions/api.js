@@ -2,9 +2,11 @@ import { MongoClient } from 'mongodb';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { normalizeLesson } from '../../lesson.js';
 
 let cachedClient = null;
 let cachedDb = null;
+let connectionPromise = null;
 
 function hashPassword(plainText) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -30,21 +32,27 @@ async function connectToDatabase() {
     return { client: cachedClient, db: cachedDb };
   }
 
+  if (connectionPromise) return connectionPromise;
+  connectionPromise = (async () => {
   const client = new MongoClient(uri, {
     maxPoolSize: 10,
     serverSelectionTimeoutMS: 5000
   });
 
+  try {
   await client.connect();
   const db = client.db('nihongo_study');
-
-  cachedClient = client;
-  cachedDb = db;
-
+  await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await db.collection('progress').createIndex({ username: 1, key: 1 });
   // Tự động khởi tạo dữ liệu mẫu nếu DB trống
   await seedDatabaseIfEmpty(db);
-
+  cachedClient = client;
+  cachedDb = db;
   return { client, db };
+  } catch (error) { await client.close().catch(() => {}); throw error; }
+  })();
+  try { return await connectionPromise; }
+  finally { connectionPromise = null; }
 }
 
 async function seedDatabaseIfEmpty(db) {
@@ -122,9 +130,10 @@ export async function handler(event, context) {
     try {
       body = JSON.parse(event.body);
     } catch (e) {
-      body = {};
+      return res(400, { ok: false, message: 'Nội dung JSON không hợp lệ.' });
     }
   }
+  if (!body || typeof body !== 'object') return res(400, { ok: false, message: 'Nội dung yêu cầu phải là JSON object hoặc mảng bài học.' });
 
   // Health check không cần DB kết nối trước để báo trạng thái cấu hình
   if (reqPath === '/health') {
@@ -248,15 +257,21 @@ export async function handler(event, context) {
     if (reqPath === '/lessons' && method === 'POST') {
       const payload = body;
       const creator = caller.username;
-      const items = Array.isArray(payload) ? payload : (payload.lessons || [payload]);
-      if (!Array.isArray(items) || !items.length || items.some(item => !item || typeof item.id !== 'string' || !item.id.trim() || typeof item.title !== 'string' || !item.title.trim())) {
-        return res(400, { ok: false, message: 'Mỗi bài học cần có id và title hợp lệ.' });
+      let items;
+      try {
+        const rawItems = Array.isArray(payload) ? payload : (payload.lessons || [payload]);
+        if (!Array.isArray(rawItems) || !rawItems.length) throw new Error('Danh sách bài học trống hoặc không hợp lệ.');
+        items = rawItems.map(item => normalizeLesson(item));
+        if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('Trùng mã bài học trong cùng lần nhập.');
+      } catch (error) { return res(400, { ok: false, message: error.message }); }
+      // Check every lesson before writing any of the batch.
+      for (const lesson of items) {
+        const existing = await db.collection('lessons').findOne({ id: lesson.id });
+        if (existing && caller.role !== 'admin' && existing.createdBy !== caller.username) return res(403, { ok: false, message: `Bạn không có quyền sửa bài ${lesson.id}.` });
       }
       let count = 0;
       for (const item of items) {
         const { _id, createdAt, updatedAt, createdBy, ...lesson } = item;
-        const existing = await db.collection('lessons').findOne({ id: lesson.id });
-        if (existing && caller.role !== 'admin' && existing.createdBy !== caller.username) return res(403, { ok: false, message: `Bạn không có quyền sửa bài ${lesson.id}.` });
         await db.collection('lessons').updateOne(
           { id: lesson.id },
           { 

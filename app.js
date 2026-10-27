@@ -1,3 +1,5 @@
+import { normalizeLesson, stripFurigana } from './lesson.js';
+export { normalizeLesson, stripFurigana };
 import {
   checkCloudHealth, isCloudActive, restoreCloudSession, logoutCloud,
   cloudLogin, cloudGetUsers, cloudCreateUser, cloudResetPassword, cloudDeleteUser,
@@ -11,6 +13,7 @@ const PAGE = {
   practice: ['Luyện tập', 'FLASHCARD PRACTICE', 'Luyện tập flashcards', 'Lật thẻ, tự kiểm tra và ghi nhớ từ theo nhịp độ của bạn.'],
   grammar: ['Mẫu câu', 'GRAMMAR & PATTERNS', 'Ngữ pháp và mẫu câu', 'Công thức, giải thích và ví dụ đơn giản, dễ nhớ.'],
   kanji: ['Chữ Hán', 'KANJI COLLECTION', 'Thư viện chữ Hán', 'Học ý nghĩa, âm đọc và các từ ghép Kanji.'],
+  reading: ['Bài đọc', 'READING PRACTICE', 'Bài đọc tiếng Nhật', 'Đọc, xem bản dịch và nghe phát âm tiếng Nhật.'],
   imports: ['Kho bài học', 'LESSON LIBRARY & IMPORT', 'Kho bài học & Thêm bài mới', 'Tìm kiếm bài cũ để học lại hoặc nạp bài mới từ file JSON / AI.'],
   users: ['Quản lý tài khoản', 'INTERNAL USERS', 'Quản lý người dùng nội bộ', 'Chỉ Quản trị viên mới có quyền tạo thêm và quản lý người dùng.']
 };
@@ -46,70 +49,12 @@ function notify(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 4300);
 }
 
-export function stripFurigana(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/\[([^\]]+)\](?:\[|\{)[^\]\}]+(?:\]|\})/g, '$1')
-    .replace(/([\u4e00-\u9faf\u3400-\u4dbf々ヶA-Za-z0-9]+)\[[^\]]+\]/g, '$1')
-    .replace(/\[([^\]]+)\]/g, '$1');
-}
-
 export function renderFurigana(text) {
   if (!text) return '';
   const escaped = h(text);
   return escaped
     .replace(/\[([^\]]+)\](?:\[|\{)([^\]\}]+)(?:\]|\})/g, '<ruby>$1<rt>$2</rt></ruby>')
     .replace(/([\u4e00-\u9faf\u3400-\u4dbf々ヶA-Za-z0-9]+)\[([^\]]+)\]/g, '<ruby>$1<rt>$2</rt></ruby>');
-}
-
-function normalizeLesson(raw, fallbackId='') {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Mỗi bài học phải là một object JSON.');
-  const id = str(raw.id || fallbackId);
-  const title = str(raw.title);
-  if (!id || !title) throw new Error('Bài học cần có "id" và "title".');
-  if (id.length > 160) throw new Error('ID bài học quá dài.');
-
-  const vocabulary = list(raw.vocabulary).map((v, i) => {
-    const rawJp = str(v?.japanese || v?.ruby);
-    const ruby = str(v?.ruby || (rawJp.includes('[') ? rawJp : ''));
-    const japanese = str(v?.japanese, stripFurigana(ruby));
-    return {
-      id: str(v?.id, `v${i+1}`),
-      japanese,
-      ruby,
-      reading: str(v?.reading),
-      meaning: str(v?.meaning),
-      example: str(v?.example),
-      exampleMeaning: str(v?.exampleMeaning)
-    };
-  }).filter(v => (v.japanese || v.ruby) && v.meaning);
-
-  const grammar = list(raw.grammar).map((v, i) => ({
-    id: str(v?.id, `g${i+1}`), title: str(v?.title), pattern: str(v?.pattern), meaning: str(v?.meaning),
-    explanation: str(v?.explanation), examples: list(v?.examples).map(e => ({ japanese: str(e?.japanese), meaning: str(e?.meaning) })).filter(e => e.japanese)
-  })).filter(v => v.title || v.pattern);
-
-  const kanji = list(raw.kanji).map((v, i) => ({
-    id: str(v?.id, `k${i+1}`), character: str(v?.character), meaning: str(v?.meaning),
-    onyomi: str(v?.onyomi), kunyomi: str(v?.kunyomi),
-    examples: list(v?.examples).map(e => ({ word: str(e?.word), reading: str(e?.reading), meaning: str(e?.meaning) })).filter(e => e.word)
-  })).filter(v => v.character && v.meaning);
-
-  if (!vocabulary.length && !grammar.length && !kanji.length) throw new Error(`Bài "${title}" không có mục từ vựng, mẫu câu hoặc Kanji hợp lệ.`);
-  const order = Number(raw.order);
-  return { 
-    id, 
-    title, 
-    level: str(raw.level, 'N5'), 
-    book: str(raw.book), 
-    order: Number.isFinite(order) ? order : 9999,
-    createdBy: raw.createdBy || null,
-    createdAt: raw.createdAt || null,
-    updatedAt: raw.updatedAt || null,
-    vocabulary, 
-    grammar, 
-    kanji 
-  };
 }
 
 function parseLessons(payload) {
@@ -171,7 +116,10 @@ function switchTab(tab) {
     notify('Chỉ Quản trị viên mới có quyền vào mục Quản lý tài khoản.');
     return;
   }
+  if (state.tab !== tab && 'speechSynthesis' in window) speechSynthesis.cancel();
   state.tab = tab;
+  history.replaceState(null, '', `#${tab}`);
+  $('lessonSelect').value = state.lessonId;
   state.query = '';
   $('searchInput').value = '';
   document.querySelectorAll('[data-tab]').forEach(el => {
@@ -226,6 +174,22 @@ function renderKanji() {
   $('sectionCount').textContent = `${items.length} chữ`;
   if (!items.length) return empty('Chưa có chữ Hán', 'Hãy đổi bộ lọc hoặc thêm bài học có danh sách kanji.', state.lessons.length === 0);
   return `<div class="kanji-grid">${items.map(v => `<article class="kanji-card"><span class="kanji-character" lang="ja">${h(v.character)}</span><div class="kanji-meaning">${h(v.meaning)}</div><div class="kanji-readings">On: ${h(v.onyomi || '—')}<br>Kun: ${h(v.kunyomi || '—')}</div><button style="margin-top:9px" class="audio-btn" data-action="speak" data-text="${h(stripFurigana(v.examples?.[0]?.word || v.character))}" title="Phát âm" aria-label="Phát âm chữ Hán">♫</button>${(v.examples || []).length ? `<div class="kanji-words">${v.examples.map(e => `<div><strong lang="ja">${renderFurigana(e.word)}</strong> (${h(e.reading)}) — ${h(e.meaning)}</div>`).join('')}</div>` : ''}<div>${itemTitle(v)}</div></article>`).join('')}</div>`;
+}
+
+function renderReadings() {
+  const items = visibleLessons().flatMap(lesson => (lesson.readings || []).map(reading => ({ ...reading, lessonId: lesson.id, lessonTitle: lesson.title })))
+    .filter(item => matchesQuery(item.title, item.japanese, item.translation, item.lessonTitle));
+  $('sectionCount').textContent = `${items.length} bài đọc`;
+  if (!items.length) return empty('Chưa có bài đọc phù hợp', 'Hãy chọn bài khác hoặc nhập JSON có mục readings.', true);
+  return `<div class="reading-list">${items.map(item => `<article class="reading-card">
+    <div class="reading-header"><div><span class="lesson-tag">✦ ${h(item.lessonTitle)}</span><h3 lang="ja">${renderFurigana(item.title)}</h3></div></div>
+    <div class="reading-text" lang="ja">${renderFurigana(item.japanese)}</div>
+    ${item.translation ? `<details class="reading-translation"><summary>Xem bản dịch tiếng Việt</summary><p>${h(item.translation)}</p></details>` : ''}
+    <div class="reading-actions"><label>Tốc độ <select class="reading-rate" aria-label="Tốc độ đọc"><option value="0.7">Chậm</option><option value="0.85" selected>Vừa</option><option value="1">Bình thường</option></select></label>
+      <button class="button-primary" data-action="read-passage" data-lesson-id="${h(item.lessonId)}" data-reading-id="${h(item.id)}">▶ Nghe bài đọc</button>
+      <button class="button-secondary" data-action="stop-reading">■ Dừng đọc</button></div>
+    <p class="reading-note">Giọng đọc phụ thuộc vào trình duyệt và giọng tiếng Nhật trên thiết bị.</p>
+  </article>`).join('')}</div>`;
 }
 
 function studyCards() {
@@ -403,6 +367,7 @@ QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN FURIGANA:
   "level": "N5",
   "book": "Minna no Nihongo I",
   "order": 1,
+  "readings": [{ "id": "r01", "title": "自己紹介", "japanese": "私[わたし]は学生[がくせい]です。", "translation": "Tôi là học sinh." }],
   "vocabulary": [
     {
       "id": "v01",
@@ -471,6 +436,7 @@ const STANDARD_LESSON_TEMPLATE = {
   "level": "N5",
   "book": "Minna no Nihongo I",
   "order": 1,
+  "readings": [{ "id": "r01", "title": "自己紹介", "japanese": "私[わたし]は学生[がくせい]です。", "translation": "Tôi là học sinh." }],
   "vocabulary": [
     {
       "id": "v01",
@@ -642,6 +608,7 @@ function renderImports() {
         <span class="schema-pill">vocabulary: Từ vựng kèm Furigana 私[わたし]</span>
         <span class="schema-pill">grammar: Mẫu câu</span>
         <span class="schema-pill">kanji: Chữ Hán</span>
+        <span class="schema-pill">readings: Bài đọc và bản dịch</span>
       </div>
     </div>
 
@@ -705,6 +672,7 @@ function renderImports() {
               const vocabCount = (l.vocabulary || []).length;
               const grammarCount = (l.grammar || []).length;
               const kanjiCount = (l.kanji || []).length;
+              const readingCount = (l.readings || []).length;
 
               return `
                 <div class="lesson-card-item">
@@ -718,6 +686,7 @@ function renderImports() {
                       <span>単 ${vocabCount} từ</span>
                       <span>文 ${grammarCount} mẫu</span>
                       <span>漢 ${kanjiCount} Kanji</span>
+                      <span>読 ${readingCount} bài đọc</span>
                       <span>👤 @${h(l.createdBy || 'system')}</span>
                     </div>
                   </div>
@@ -725,6 +694,7 @@ function renderImports() {
                     <button class="button-primary btn-sm" data-action="learn-lesson" data-id="${h(l.id)}" title="Học từ vựng bài này ngay">▶ Học từ vựng</button>
                     <button class="button-secondary btn-sm" data-action="practice-lesson" data-id="${h(l.id)}" title="Luyện flashcard bài này">▣ Flashcard</button>
                     <button class="button-subtle btn-sm" data-action="grammar-lesson" data-id="${h(l.id)}" title="Xem mẫu câu bài này">文 Mẫu câu</button>
+                    ${readingCount ? `<button class="button-subtle btn-sm" data-action="reading-lesson" data-id="${h(l.id)}">読 Bài đọc</button>` : ''}
                     <button class="button-subtle btn-sm" data-action="download-lesson" data-id="${h(l.id)}" title="Tải file JSON bài học này">↓ Tải JSON</button>
                     ${canDelete ? `<button class="button-danger btn-sm" data-action="remove" data-id="${h(l.id)}" title="Xóa bài học khỏi cơ sở dữ liệu">Xóa</button>` : ''}
                   </div>
@@ -815,17 +785,20 @@ function renderUsers() {
 }
 
 function renderView() {
+  const pasteDraft = $('jsonPaste')?.value;
   let result = '';
   switch (state.tab) {
     case 'vocabulary': result = renderVocabulary(); break;
     case 'practice': result = renderPractice(); break;
     case 'grammar': result = renderGrammar(); break;
     case 'kanji': result = renderKanji(); break;
+    case 'reading': result = renderReadings(); break;
     case 'imports': result = renderImports(); break;
     case 'users': result = renderUsers(); break;
     default: result = renderVocabulary();
   }
   $('view').innerHTML = result;
+  if (pasteDraft !== undefined && $('jsonPaste')) $('jsonPaste').value = pasteDraft;
   if (state.tab === 'practice') {
     if ($('cardType')) $('cardType').value = state.flash.type;
     if ($('cardMode')) $('cardMode').value = state.flash.mode;
@@ -871,6 +844,7 @@ async function markCard(rating) {
   } finally {
     savingProgress = false;
   }
+  if (state.currentUser?.username !== username) return;
   state.progress.set(progressKey, record);
   state.progress.set(card.key, record);
 
@@ -897,6 +871,38 @@ function speak(text) {
   }
 }
 
+export function splitReadingText(text, maxLength = 150) {
+  const chars = Array.from(stripFurigana(text));
+  const chunks = [];
+  let part = '';
+  for (const char of chars) {
+    part += char;
+    if (part.length >= maxLength || (part.length >= 40 && /[。！？!?\n]/.test(char))) {
+      if (part.trim()) chunks.push(part.trim());
+      part = '';
+    }
+  }
+  if (part.trim()) chunks.push(part.trim());
+  return chunks;
+}
+
+function speakPassage(text, rate) {
+  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') { notify('Trình duyệt này chưa hỗ trợ đọc văn bản.'); return; }
+  try {
+    speechSynthesis.cancel();
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.toLowerCase() === 'ja-jp') || voices.find(v => v.lang.toLowerCase().startsWith('ja'));
+    for (const chunk of splitReadingText(text)) {
+      const msg = new SpeechSynthesisUtterance(chunk);
+      msg.lang = 'ja-JP';
+      msg.rate = Number.isFinite(rate) ? rate : 0.85;
+      if (voice) msg.voice = voice;
+      msg.onerror = event => { if (!['canceled', 'interrupted'].includes(event.error)) notify('Không thể đọc bài. Hãy kiểm tra giọng tiếng Nhật trên thiết bị.'); };
+      speechSynthesis.speak(msg);
+    }
+  } catch (error) { notify('Không thể đọc bài: ' + error.message); }
+}
+
 function download(name, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob), link = document.createElement('a');
@@ -912,6 +918,7 @@ async function importPayload(payload, sourceName='JSON') {
   }
   await cloudSaveLessons(incoming, currentUsername);
   await reloadLessons();
+  if ($('jsonPaste')) $('jsonPaste').value = '';
   render();
   notify(`Đã lưu ${incoming.length} bài học từ "${sourceName}" vào tài khoản @${currentUsername}.`);
   return incoming.length;
@@ -957,6 +964,12 @@ async function handleAction(button) {
   if (button.dataset.tab) { switchTab(button.dataset.tab); return; }
   const action = button.dataset.action;
   if (action === 'speak') { speak(button.dataset.text); return; }
+  if (action === 'read-passage') {
+    const passage = state.lessons.find(lesson => lesson.id === button.dataset.lessonId)?.readings?.find(item => item.id === button.dataset.readingId);
+    if (passage) speakPassage(passage.japanese, Number(button.closest('.reading-card').querySelector('.reading-rate').value));
+    return;
+  }
+  if (action === 'stop-reading') { if ('speechSynthesis' in window) speechSynthesis.cancel(); return; }
   if (action === 'flip') { if (Date.now() < ignoreClickUntil) return; state.flash.flipped = !state.flash.flipped; renderView(); return; }
   if (action === 'next') { nextCard(1); return; }
   if (action === 'prev') { nextCard(-1); return; }
@@ -1012,6 +1025,12 @@ async function handleAction(button) {
     }
     return;
   }
+  if (action === 'reading-lesson') {
+    state.lessonId = button.dataset.id;
+    switchTab('reading');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   if (action === 'download-lesson') {
     const lesson = state.lessons.find(l => l.id === button.dataset.id);
     if (lesson) {
@@ -1049,7 +1068,7 @@ async function handleAction(button) {
       exportedAt: new Date().toISOString(),
       user: state.currentUser?.username || 'admin',
       lessons: state.lessons,
-      progress: [...state.progress.values()]
+      progress: [...new Map([...state.progress.values()].map(item => [item.key, item])).values()]
     });
     return;
   }
@@ -1140,6 +1159,8 @@ async function reloadLessons() {
     }
   } catch (e) {
     console.error('Lỗi tải bài học:', e);
+    notify('Không tải được bài học: ' + e.message);
+    throw e;
   }
 }
 
@@ -1170,6 +1191,9 @@ async function handleLogin(e) {
   const password = $('loginPassword').value;
   const errEl = $('loginError');
   errEl.style.display = 'none';
+  const submit = e.currentTarget.querySelector('[type="submit"]');
+  if (submit.disabled) return;
+  submit.disabled = true;
 
   try {
     const user = await cloudLogin(username, password);
@@ -1185,22 +1209,38 @@ async function handleLogin(e) {
     updateUserUI();
     await reloadLessons();
     await reloadUserProgress();
-    await loadUsersList();
+    if (user.role === 'admin') await loadUsersList();
     render();
     notify(`Xin chào, ${user.name || user.username}!`);
   } catch (err) {
     errEl.textContent = err.message;
     errEl.style.display = 'block';
+    updateUserUI();
+    notify(err.message);
+  } finally {
+    submit.disabled = false;
   }
+}
+
+function clearSessionUI() {
+  localStorage.removeItem('nihongo_session');
+  state.currentUser = null;
+  state.progress = new Map();
+  state.userList = [];
+  state.staticLessons = [];
+  state.imported = [];
+  state.lessons = [];
+  state.lessonId = 'all';
+  state.tab = 'vocabulary';
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  render();
+  updateUserUI();
 }
 
 async function handleLogout() {
   if (!confirm('Bạn có muốn đăng xuất khỏi ứng dụng không?')) return;
   try { await logoutCloud(); } catch (error) { console.error('Không thu hồi được phiên:', error); }
-  localStorage.removeItem('nihongo_session');
-  state.currentUser = null;
-  state.tab = 'vocabulary';
-  updateUserUI();
+  clearSessionUI();
   $('loginUsername').value = '';
   $('loginPassword').value = '';
   $('loginError').style.display = 'none';
@@ -1240,6 +1280,10 @@ async function handleCreateUser(e) {
 }
 
 function setupListeners() {
+  window.addEventListener('nihongo-session-expired', () => {
+    clearSessionUI();
+    notify('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  });
   document.addEventListener('click', event => {
     const button = event.target.closest('[data-tab],[data-action]');
     if (button) {
@@ -1356,6 +1400,7 @@ function setupListeners() {
   }, { passive: true });
 
   document.addEventListener('keydown', event => {
+    if (!state.currentUser) return;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     if (event.key === '/' && !typing && !['imports', 'users'].includes(state.tab)) {
       event.preventDefault();
@@ -1450,4 +1495,4 @@ async function start() {
   }
 }
 
-start();
+if (typeof document !== 'undefined') start();

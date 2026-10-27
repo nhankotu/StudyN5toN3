@@ -68,9 +68,27 @@
 
 Chạy `npm test` để kiểm tra tự động và `npm run build` để tạo thư mục public cho Netlify. Ứng dụng yêu cầu kết nối MongoDB; không đồng bộ dữ liệu tạo khi mất mạng. Các tài khoản cũ có thể đăng nhập bằng mật khẩu hiện tại và sẽ được nâng cấp mã băm khi đăng nhập. Hãy đổi mật khẩu mặc định cũ nếu đã từng sử dụng.
 
+Kiểm thử giao diện bằng dữ liệu tạm: chạy `node tests/preview-server.js`, mở `http://127.0.0.1:8766`, đăng nhập `admin` / `test-password`. Dữ liệu chỉ nằm trong bộ nhớ và mất khi dừng server. Lệnh này không kết nối Atlas. Để kiểm tra ghi/đọc MongoDB thật, chạy riêng `npm run test:db`: tạo hai bản ghi thử trong lessons/progress, xác minh và xóa đúng hai bản ghi đó.
+
 ---
 
 ## Mẫu định dạng JSON bài học
+
+Để nhập bài đọc, thêm mảng `readings` vào bài học. Một bài chỉ có `readings` cũng hợp lệ; `translation` và `title` của từng bài đọc là tùy chọn. Có thể nhập qua Kho bài học bằng file JSON hoặc dán JSON. Văn bản và bản dịch dùng `\n` để xuống dòng. Nút nghe dùng giọng tiếng Nhật của trình duyệt/thiết bị.
+
+```json
+{
+  "id": "bai-doc-01",
+  "title": "Một ngày của tôi",
+  "level": "N5",
+  "readings": [{
+    "id": "r01",
+    "title": "私[わたし]の一日[いちにち]",
+    "japanese": "私[わたし]は毎朝[まいあさ]、七時[しちじ]に起[お]きます。\n学校[がっこう]へ行[い]きます。",
+    "translation": "Mỗi sáng tôi thức dậy lúc bảy giờ.\nTôi đi học."
+  }]
+}
+```
 
 ```json
 {

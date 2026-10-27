@@ -4,9 +4,14 @@ const DB_VERSION = 2;
 let dbPromise;
 export let isCloudActive = false;
 const tokenKey = 'nihongo_token';
-function apiFetch(url, options = {}) {
+async function apiFetch(url, options = {}) {
   const token = localStorage.getItem(tokenKey);
-  return fetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+  const response = await fetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+  if (response.status === 401 && token) {
+    localStorage.removeItem(tokenKey);
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('nihongo-session-expired'));
+  }
+  return response;
 }
 export async function restoreCloudSession() {
   if (!localStorage.getItem(tokenKey)) return null;

@@ -1,31 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MongoClient } from 'mongodb';
 
-const data = { users: [], lessons: [], sessions: [], progress: [] };
-function matches(doc, query) {
-  return Object.entries(query).every(([key, value]) => value && typeof value === 'object' && '$gt' in value ? doc[key] > value.$gt : doc[key] === value);
-}
-const db = { collection(name) {
-  const rows = data[name];
-  return {
-    countDocuments: async () => rows.length,
-    findOne: async query => rows.find(row => matches(row, query)) || null,
-    find: query => ({ sort() { return this; }, toArray: async () => rows.filter(row => matches(row, query)) }),
-    insertOne: async doc => { rows.push({ ...doc }); },
-    updateOne: async (query, update, options = {}) => {
-      let row = rows.find(item => matches(item, query));
-      const existed = !!row;
-      if (!row && options.upsert) { row = { ...query, ...update.$setOnInsert }; rows.push(row); }
-      if (row) Object.assign(row, update.$set);
-      return { matchedCount: existed ? 1 : 0 };
-    },
-    deleteOne: async query => { const index = rows.findIndex(row => matches(row, query)); if (index >= 0) rows.splice(index, 1); },
-    deleteMany: async query => { for (let i = rows.length - 1; i >= 0; i--) if (matches(rows[i], query)) rows.splice(i, 1); }
-  };
-} };
-MongoClient.prototype.connect = async function () { return this; };
-MongoClient.prototype.db = () => db;
+import { data } from './helpers/memory-db.js';
 process.env.MONGODB_URI = 'mongodb://localhost:27017/test';
 process.env.INITIAL_ADMIN_PASSWORD = 'test-password';
 const { handler } = await import('../netlify/functions/api.js');
@@ -41,14 +17,28 @@ test('sessions, authorization, lessons and progress', async () => {
   assert.equal((await call('/auth/users', 'POST', { username: 'student', password: 'pass1234' }, admin.token)).status, 201);
   const student = await call('/auth/login', 'POST', { username: 'student', password: 'pass1234' });
   assert.equal((await call('/auth/users', 'GET', null, student.token)).status, 403);
-  const lesson = { id: 'lesson-1', title: 'Lesson', createdAt: null, vocabulary: [] };
+  const lesson = { id: 'lesson-1', title: 'Lesson', createdAt: null, vocabulary: [{ id: 'v1', japanese: '私', meaning: 'Tôi' }] };
   assert.equal((await call('/lessons', 'POST', { lessons: [lesson] }, admin.token)).status, 200);
+  const reading = { id: 'reading-1', title: 'Bài đọc', readings: [{ id: 'r1', title: 'Bài đọc', japanese: '私[わたし]です。', translation: 'Là tôi.' }] };
+  assert.equal((await call('/lessons', 'POST', { lessons: [reading] }, admin.token)).status, 200);
+  assert.deepEqual((await call('/lessons', 'GET', null, admin.token)).lessons.find(item => item.id === reading.id).readings, reading.readings);
   assert.equal((await call('/lessons', 'POST', { lessons: [lesson] }, student.token)).status, 403);
+  assert.equal((await call('/lessons', 'POST', { lessons: [{ id: 'new', title: 'Invalid' }] }, admin.token)).status, 400);
+  assert.equal((await call('/lessons', 'POST', { lessons: [reading, reading] }, admin.token)).status, 400);
+  const unauthorizedBatch = await call('/lessons', 'POST', { lessons: [{ ...reading, id: 'should-not-exist' }, lesson] }, student.token);
+  assert.equal(unauthorizedBatch.status, 403);
+  assert.equal(data.lessons.some(item => item.id === 'should-not-exist'), false);
+  assert.equal((await call('/auth/users', 'GET', null, admin.token)).users.some(item => 'passwordHash' in item), false);
   const record = { key: 'student:lesson-1:vocabulary:v1', username: 'student', cardKey: 'lesson-1:vocabulary:v1', status: 'known', dueAt: 123, intervalDays: 1, reviews: 1 };
   assert.equal((await call('/progress', 'POST', record, student.token)).status, 200);
   assert.equal((await call('/progress', 'GET', null, student.token)).progress.length, 1);
   assert.equal((await call('/progress', 'GET', null, admin.token)).progress.length, 0);
   assert.equal((await call('/progress', 'POST', record, admin.token)).status, 400);
-  await call('/auth/logout', 'POST', null, student.token);
+  assert.equal((await call('/lessons/lesson-1', 'DELETE', null, student.token)).status, 403);
+  assert.equal((await call('/auth/users/student/password', 'PUT', { password: 'changed-pass' }, admin.token)).status, 200);
   assert.equal((await call('/progress', 'GET', null, student.token)).status, 401);
+  const updatedStudent = await call('/auth/login', 'POST', { username: 'student', password: 'changed-pass' });
+  assert.equal(updatedStudent.status, 200);
+  await call('/auth/logout', 'POST', null, updatedStudent.token);
+  assert.equal((await call('/progress', 'GET', null, updatedStudent.token)).status, 401);
 });

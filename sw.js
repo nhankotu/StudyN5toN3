@@ -1,7 +1,7 @@
 /* PWA offline cache. Network-first để khi cập nhật file JSON trên Netlify, thiết bị lấy bản mới. */
-const CACHE_NAME = 'nihongo-study-v1';
+const CACHE_NAME = 'nihongo-study-v3';
 const APP_ASSETS = [
-  './', './index.html', './styles.css', './app.js', './db.js',
+  './', './index.html', './styles.css', './app.js', './db.js', './lesson.js',
   './manifest.webmanifest', './assets/logo.svg', './assets/icon-192.png',
   './assets/icon-512.png', './data/manifest.json'
 ];
