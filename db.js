@@ -65,22 +65,37 @@ export async function hashPassword(plainText) {
 
 // ======================== API CLOUD (MongoDB) ========================
 
+export let lastHealthData = null;
+
 export async function checkCloudHealth() {
   try {
     const res = await fetch('/api/health');
-    if (!res.ok) { isCloudActive = false; return { ok: false }; }
+    if (!res.ok) {
+      isCloudActive = false;
+      const text = await res.text().catch(() => '');
+      lastHealthData = { ok: false, error: `HTTP ${res.status}: ${res.statusText}`, text };
+      console.error('[CloudHealth] HTTP Error:', lastHealthData);
+      return lastHealthData;
+    }
     const data = await res.json();
     isCloudActive = data.ok === true && data.database === 'connected';
+    lastHealthData = data;
+    if (!isCloudActive) {
+      console.error('[CloudHealth] DB Error from /api/health:', data);
+    }
     return data;
   } catch (e) {
     isCloudActive = false;
-    return { ok: false, error: e.message };
+    lastHealthData = { ok: false, error: e.message };
+    console.error('[CloudHealth] Fetch error:', e);
+    return lastHealthData;
   }
 }
 
 export async function cloudLogin(username, password) {
   if (!isCloudActive) {
-    throw new Error('Chưa kết nối được cơ sở dữ liệu. Vui lòng liên hệ quản trị viên.');
+    const detail = lastHealthData?.message || lastHealthData?.error || '';
+    throw new Error('Chưa kết nối được cơ sở dữ liệu' + (detail ? `: ${detail}` : '. Vui lòng liên hệ quản trị viên.'));
   }
 
   const res = await fetch('/api/auth/login', {

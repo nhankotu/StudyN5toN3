@@ -3373,8 +3373,13 @@ async function start() {
   }
 
   // 2. Nạp dữ liệu bài học
-  if (!isCloudActive) $('loginError').textContent = 'Không kết nối được cơ sở dữ liệu. Vui lòng liên hệ quản trị viên.';
-  if (!isCloudActive) $('loginError').style.display = 'block';
+  if (!isCloudActive) {
+    const errDetail = health?.message || health?.error;
+    const extra = health?.hasMongoUri === false ? ' (Chưa nhận được biến MONGODB_URI trên Cloudflare Settings)' : '';
+    $('loginError').textContent = 'Chưa kết nối được cơ sở dữ liệu' + (errDetail ? `: ${errDetail}` : '. Vui lòng liên hệ quản trị viên.') + extra;
+    $('loginError').style.display = 'block';
+    console.error('[MongoDB Health Check Error]:', health);
+  }
 
   // 3. Khôi phục phiên đăng nhập nếu có
   const savedSession = localStorage.getItem('nihongo_session');

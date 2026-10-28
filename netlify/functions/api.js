@@ -23,6 +23,52 @@ const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex
 const escapeRegex = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const sessionUser = user => ({ username: user.username, name: user.name || user.username, role: user.role, mustChangePassword: !!user.mustChangePassword });
 
+async function resolveMongoSrvViaDoH(uri) {
+  try {
+    const match = uri.match(/^mongodb\+srv:\/\/([^:]+):([^@]+)@([^/?]+)(\/[^?]*)?(\?.*)?$/);
+    if (!match) return uri;
+    const [, user, pass, host, pathPart = '', queryPart = ''] = match;
+    
+    // Phân giải SRV qua Cloudflare DNS-over-HTTPS (DoH)
+    const srvUrl = `https://cloudflare-dns.com/dns-query?name=_mongodb._tcp.${host}&type=SRV`;
+    const srvRes = await fetch(srvUrl, { headers: { accept: 'application/dns-json' } });
+    if (!srvRes.ok) return uri;
+    const srvData = await srvRes.json();
+    if (!srvData.Answer || !srvData.Answer.length) return uri;
+
+    const hosts = srvData.Answer.map(ans => {
+      const parts = String(ans.data).trim().split(/\s+/);
+      const port = parts[2] || '27017';
+      const target = (parts[3] || '').replace(/\.$/, '');
+      return target ? `${target}:${port}` : null;
+    }).filter(Boolean);
+
+    if (!hosts.length) return uri;
+
+    // Phân giải TXT để lấy replicaSet và authSource
+    let txtParams = 'ssl=true';
+    try {
+      const txtUrl = `https://cloudflare-dns.com/dns-query?name=${host}&type=TXT`;
+      const txtRes = await fetch(txtUrl, { headers: { accept: 'application/dns-json' } });
+      if (txtRes.ok) {
+        const txtData = await txtRes.json();
+        if (txtData.Answer && txtData.Answer.length) {
+          const txtRaw = txtData.Answer.map(a => String(a.data).replace(/^"|"$/g, '')).join('&');
+          if (txtRaw) txtParams += `&${txtRaw}`;
+        }
+      }
+    } catch {}
+
+    const queryClean = queryPart.replace(/^\?/, '');
+    const directUri = `mongodb://${encodeURIComponent(decodeURIComponent(user))}:${encodeURIComponent(decodeURIComponent(pass))}@${hosts.join(',')}${pathPart}?${txtParams}${queryClean ? '&' + queryClean : ''}`;
+    console.log(`[DoH Resolver] Đã chuyển đổi mongodb+srv sang direct hosts: ${hosts.length} nút.`);
+    return directUri;
+  } catch (err) {
+    console.warn('[DoH Resolver Error]:', err.message);
+    return uri;
+  }
+}
+
 async function connectToDatabase() {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
@@ -35,24 +81,47 @@ async function connectToDatabase() {
 
   if (connectionPromise) return connectionPromise;
   connectionPromise = (async () => {
-  const client = new MongoClient(uri, {
-    maxPoolSize: 10,
-    serverSelectionTimeoutMS: 5000
-  });
+    let client;
+    try {
+      client = new MongoClient(uri, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000
+      });
+      await client.connect();
+    } catch (firstError) {
+      // Nếu lỗi do SRV / DNS lookup trong môi trường Edge (Cloudflare Workers)
+      if (uri.startsWith('mongodb+srv://') && typeof fetch === 'function') {
+        console.warn('[DB Connect] Thử phân giải SRV sang direct replica-set do lỗi ban đầu:', firstError.name, firstError.message);
+        const directUri = await resolveMongoSrvViaDoH(uri);
+        if (directUri && directUri !== uri) {
+          await client?.close().catch(() => {});
+          client = new MongoClient(directUri, {
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 5000
+          });
+          await client.connect();
+        } else {
+          throw firstError;
+        }
+      } else {
+        throw firstError;
+      }
+    }
 
-  try {
-  await client.connect();
-  const db = client.db('nihongo_study');
-  await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-  await db.collection('progress').createIndex({ username: 1, key: 1 });
-  await db.collection('lessons').createIndex({ id: 1 }, { unique: true });
-  await db.collection('users').createIndex({ username: 1 }, { unique: true });
-  // Tự động khởi tạo tài khoản quản trị nếu DB trống
-  await seedDatabaseIfEmpty(db);
-  cachedClient = client;
-  cachedDb = db;
-  return { client, db };
-  } catch (error) { await client.close().catch(() => {}); throw error; }
+    try {
+      const db = client.db('nihongo_study');
+      await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await db.collection('progress').createIndex({ username: 1, key: 1 });
+      await db.collection('lessons').createIndex({ id: 1 }, { unique: true });
+      await db.collection('users').createIndex({ username: 1 }, { unique: true });
+      await seedDatabaseIfEmpty(db);
+      cachedClient = client;
+      cachedDb = db;
+      return { client, db };
+    } catch (error) {
+      await client.close().catch(() => {});
+      throw error;
+    }
   })();
   try { return await connectionPromise; }
   finally { connectionPromise = null; }
@@ -124,7 +193,17 @@ export async function handler(event, context) {
       ]);
       return res(200, { ok: true, database: 'connected', users, lessons });
     } catch (err) {
-      return res(200, { ok: false, database: 'error', message: err.message });
+      console.error('[Health Check Error]:', err);
+      const uri = process.env.MONGODB_URI;
+      const maskedUri = uri ? uri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@') : null;
+      return res(200, {
+        ok: false,
+        database: 'error',
+        message: err.message,
+        name: err.name,
+        hasMongoUri: !!uri,
+        maskedUri
+      });
     }
   }
 
