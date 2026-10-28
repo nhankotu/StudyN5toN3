@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateQuestionChoices, buildQuizSession, updateReviewStatus, normalizeAnswer } from '../quiz.js';
+import {
+  generateQuestionChoices, buildQuizSession, updateReviewStatus, normalizeAnswer,
+  calculateNextInterval, SCIENTIFIC_SPACED_INTERVALS
+} from '../quiz.js';
 
 test('normalizeAnswer strips punctuation and furigana', () => {
   assert.equal(normalizeAnswer(' 私[わたし] '), '私');
@@ -152,4 +155,30 @@ test('buildQuizSession supports lessons with contentType all, vocabulary only, a
   });
   assert.equal(emptyReviewSession.success, false);
   assert.equal(emptyReviewSession.error, 'NO_REVIEW_ITEMS');
+});
+
+test('calculateNextInterval follows Ebbinghaus spaced progression', () => {
+  assert.deepEqual(SCIENTIFIC_SPACED_INTERVALS, [1, 3, 7, 14, 30, 60]);
+
+  // Level 0 -> Level 1 (1 day)
+  assert.equal(calculateNextInterval(0, true, 'good'), 1);
+  // Level 1 -> Level 2 (3 days)
+  assert.equal(calculateNextInterval(1, true, 'good'), 3);
+  // Level 2 -> Level 3 (7 days)
+  assert.equal(calculateNextInterval(3, true, 'good'), 7);
+  // Level 3 -> Level 4 (14 days)
+  assert.equal(calculateNextInterval(7, true, 'good'), 14);
+  // Level 4 -> Level 5 (30 days)
+  assert.equal(calculateNextInterval(14, true, 'good'), 30);
+  // Level 5 -> Level 6 (60 days)
+  assert.equal(calculateNextInterval(30, true, 'good'), 60);
+
+  // Wrong / again -> Reset to 0 days
+  assert.equal(calculateNextInterval(14, false), 0);
+  assert.equal(calculateNextInterval(30, true, 'again'), 0);
+
+  // Easy rating jumps further
+  assert.equal(calculateNextInterval(0, true, 'easy'), 3);
+  assert.equal(calculateNextInterval(1, true, 'easy'), 7);
+  assert.equal(calculateNextInterval(3, true, 'easy'), 14);
 });

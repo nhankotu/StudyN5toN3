@@ -423,6 +423,8 @@ export async function handler(event, context) {
         updateDoc.needsReview = typeof rec.needsReview === 'boolean' ? rec.needsReview : rec.status === 'learning';
         updateDoc.reviews = Number.isInteger(rec.reviews) ? rec.reviews : 1;
         if (Number.isFinite(rec.score)) updateDoc.score = rec.score;
+        if (Number.isFinite(rec.dueAt)) updateDoc.dueAt = rec.dueAt;
+        if (Number.isFinite(rec.intervalDays)) updateDoc.intervalDays = rec.intervalDays;
       } else if (activity === 'kanji_write') {
         updateDoc.score = Number.isFinite(rec.score) ? rec.score : 0;
         updateDoc.mode = rec.mode || 'shape';

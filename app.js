@@ -9,7 +9,10 @@ import {
 } from './db.js';
 import { evaluateKanjiDrawing, KANJIVG_LICENSE } from './kanji-evaluator.js';
 import { getKanjiStrokes, KANJIVG_ATTRIBUTION } from './kanji-strokes.js';
-import { buildQuizSession, updateReviewStatus, QUIZ_RULES_EXPLANATION } from './quiz.js';
+import {
+  buildQuizSession, updateReviewStatus, QUIZ_RULES_EXPLANATION,
+  SCIENTIFIC_SPACED_INTERVALS, calculateNextInterval
+} from './quiz.js';
 
 const PAGE = {
   vocabulary: ['Từ vựng', 'VOCABULARY COLLECTION', 'Kho từ vựng', 'Khám phá các từ tiếng Nhật theo từng bài học.'],
@@ -137,6 +140,7 @@ function renderMetrics() {
   const known = allCards('vocabulary', false).filter(card => isKnown(card.key)).length;
   const metrics = [['▤', state.lessons.length, 'Bài học'], ['あ', c.vocabulary, 'Từ vựng'], ['文', c.grammar, 'Mẫu câu'], ['漢', c.kanji, 'Chữ Hán']];
   $('metrics').innerHTML = metrics.map(([ico, num, label]) => `<article class="metric"><span class="metric-icon">${ico}</span><span class="metric-body"><strong>${num}</strong><small>${label}</small></span></article>`).join('');
+  renderSpacedReminder();
 }
 
 function renderLessonOptions() {
@@ -178,9 +182,227 @@ function switchTab(tab) {
   renderView();
 }
 
+function getSpacedReviewStatus() {
+  const username = state.currentUser?.username || 'default';
+  const now = Date.now();
+  const allVocab = allCards('vocabulary', false);
+  const allGrammar = allCards('grammar', false);
+  const allKanji = allCards('kanji', false);
+
+  function getCardDueInfo(card, type) {
+    const cardKey = card.key;
+    const progressKey = `${username}:${cardKey}`;
+    const quizProgressKey = `${username}:quiz:${cardKey}`;
+    const rec = state.progress.get(progressKey) || state.progress.get(quizProgressKey) || state.progress.get(cardKey);
+
+    if (!rec) {
+      return { card, type, isDue: false, isNew: true, intervalDays: 0, dueAt: null, rec: null };
+    }
+
+    const isOverdue = rec.dueAt ? rec.dueAt <= now : true;
+    const needsReview = Boolean(rec.needsReview || rec.status === 'learning');
+    const isDue = needsReview || isOverdue;
+
+    return {
+      card,
+      type,
+      isDue,
+      isNew: false,
+      needsReview,
+      isOverdue,
+      intervalDays: rec.intervalDays || 0,
+      dueAt: rec.dueAt,
+      reviews: rec.reviews || 0,
+      rec
+    };
+  }
+
+  const dueVocab = allVocab.map(c => getCardDueInfo(c, 'vocabulary')).filter(x => x.isDue);
+  const dueGrammar = allGrammar.map(c => getCardDueInfo(c, 'grammar')).filter(x => x.isDue);
+  const dueKanji = allKanji.map(c => getCardDueInfo(c, 'kanji')).filter(x => x.isDue);
+  const totalDue = dueVocab.length + dueGrammar.length + dueKanji.length;
+
+  let nextDueTime = null;
+  if (totalDue === 0) {
+    for (const list of [allVocab, allGrammar, allKanji]) {
+      for (const card of list) {
+        const progressKey = `${username}:${card.key}`;
+        const quizKey = `${username}:quiz:${card.key}`;
+        const rec = state.progress.get(progressKey) || state.progress.get(quizKey) || state.progress.get(card.key);
+        if (rec && rec.dueAt && rec.dueAt > now) {
+          if (!nextDueTime || rec.dueAt < nextDueTime) nextDueTime = rec.dueAt;
+        }
+      }
+    }
+  }
+
+  return {
+    dueVocab,
+    dueGrammar,
+    dueKanji,
+    totalDue,
+    nextDueTime,
+    allVocabCount: allVocab.length,
+    allGrammarCount: allGrammar.length,
+    allKanjiCount: allKanji.length
+  };
+}
+
+function getMemoryStageInfo(intervalDays) {
+  if (intervalDays <= 0) return { level: 0, label: 'Cần ôn ngay', color: '#ef4444', bg: '#fee2e2' };
+  if (intervalDays <= 1) return { level: 1, label: 'Sau 1 ngày (24h)', color: '#d97706', bg: '#fef3c7' };
+  if (intervalDays <= 3) return { level: 2, label: 'Sau 3 ngày', color: '#ca8a04', bg: '#fef9c3' };
+  if (intervalDays <= 7) return { level: 3, label: 'Sau 1 tuần', color: '#2563eb', bg: '#dbeafe' };
+  if (intervalDays <= 14) return { level: 4, label: 'Sau 2 tuần', color: '#4f46e5', bg: '#e0e7ff' };
+  if (intervalDays <= 30) return { level: 5, label: 'Sau 1 tháng', color: '#7c3aed', bg: '#ede9fe' };
+  return { level: 6, label: 'Trí nhớ dài hạn (60+ ngày)', color: '#16a34a', bg: '#dcfce7' };
+}
+
+function renderSpacedReminder() {
+  const area = $('spacedReminderArea');
+  if (!area) return;
+  if (!state.currentUser) {
+    area.innerHTML = '';
+    return;
+  }
+
+  const status = getSpacedReviewStatus();
+  if (status.totalDue > 0) {
+    area.innerHTML = `
+      <div class="spaced-reminder-banner" role="region" aria-label="Nhắc nhở ôn tập Spaced Repetition">
+        <div class="reminder-left">
+          <div class="reminder-badge-pulse">🔔 NHẮC NHỞ ÔN TẬP THEO CHU KỲ EBBINGHAUS</div>
+          <h3>Hôm nay bạn có <strong>${status.totalDue}</strong> mục cần ôn lại</h3>
+          <p>
+            Đây là "thời điểm vàng" để củng cố <strong>${status.dueVocab.length} từ vựng</strong> và <strong>${status.dueGrammar.length} mẫu câu</strong> nhằm ngăn chặn đà quên 70% sau ngày đầu và khắc sâu vào trí nhớ dài hạn.
+          </p>
+        </div>
+        <div class="reminder-actions-row">
+          <button class="button-primary btn-sm" data-action="quick-due-flashcard">⚡ Ôn Flashcards (${status.dueVocab.length})</button>
+          <button class="button-secondary btn-sm" data-action="quick-due-quiz">❓ Trắc nghiệm phản xạ (${status.totalDue})</button>
+          <button class="button-subtle btn-sm" data-action="open-spaced-modal">📋 Lộ trình khoa học</button>
+        </div>
+      </div>
+    `;
+  } else {
+    const nextDateStr = status.nextDueTime
+      ? new Date(status.nextDueTime).toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric', month: 'numeric' })
+      : null;
+
+    area.innerHTML = `
+      <div class="spaced-reminder-banner banner-done" role="region" aria-label="Hoàn thành ôn tập hôm nay">
+        <div class="reminder-left">
+          <div class="reminder-badge-done">✓ ĐÃ HOÀN THÀNH MỤC ÔN HÔM NAY</div>
+          <h3>Xuất sắc! Tất cả từ vựng & mẫu câu đã được củng cố</h3>
+          <p>
+            Não bộ của bạn đang duy trì liên kết trí nhớ rất tốt theo chu kỳ lặp lại ngắt quãng. ${nextDateStr ? `Mục tiếp theo sẽ đến hạn vào <strong>${nextDateStr}</strong>.` : 'Hãy tiếp tục nạp thêm bài mới nhé!'}
+          </p>
+        </div>
+        <div class="reminder-actions-row">
+          <button class="button-subtle btn-sm" data-action="open-spaced-modal">💡 Xem chu kỳ giãn cách khoa học</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function openSpacedModal() {
+  const modal = $('spacedModalOverlay');
+  const body = $('spacedModalBody');
+  if (!modal || !body) return;
+
+  const status = getSpacedReviewStatus();
+  const dueItems = [...status.dueVocab, ...status.dueGrammar, ...status.dueKanji];
+
+  body.innerHTML = `
+    <div class="ebbinghaus-guide-box">
+      <h4>🧠 Cơ sở khoa học: Đường cong quên lãng Ebbinghaus</h4>
+      <p>
+        Nghiên cứu của nhà tâm lý học Hermann Ebbinghaus chứng minh: <strong>sau 24 giờ đầu tiên, não bộ sẽ quên tới 70% kiến thức mới</strong> nếu không được gợi nhớ.
+        Bằng phương pháp <strong>Lặp lại ngắt quãng (Spaced Repetition)</strong>, việc ôn tập đúng vào các "thời điểm vàng" sẽ bẻ phẳng đường cong quên lãng, đưa từ vựng và mẫu câu vào <strong>trí nhớ dài hạn vĩnh viễn</strong>.
+      </p>
+    </div>
+
+    <div class="ebbinghaus-stages-grid">
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#f59e0b">GIAI ĐOẠN 1</span>
+        <span class="stage-card-interval">Sau 1 ngày</span>
+        <span class="stage-card-desc">Chặn đà quên 70% sau ngày đầu</span>
+      </div>
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#ca8a04">GIAI ĐOẠN 2</span>
+        <span class="stage-card-interval">Sau 3 ngày</span>
+        <span class="stage-card-desc">Kích hoạt độ khó mong muốn</span>
+      </div>
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#2563eb">GIAI ĐOẠN 3</span>
+        <span class="stage-card-interval">Sau 7 ngày</span>
+        <span class="stage-card-desc">Củng cố trí nhớ trung hạn</span>
+      </div>
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#4f46e5">GIAI ĐOẠN 4</span>
+        <span class="stage-card-interval">Sau 14 ngày</span>
+        <span class="stage-card-desc">Tạo phản xạ ngữ nghĩa tự nhiên</span>
+      </div>
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#7c3aed">GIAI ĐOẠN 5</span>
+        <span class="stage-card-interval">Sau 30 ngày</span>
+        <span class="stage-card-desc">Khắc sâu vào trí nhớ dài hạn</span>
+      </div>
+      <div class="stage-card">
+        <span class="stage-card-num" style="color:#16a34a">GIAI ĐOẠN 6</span>
+        <span class="stage-card-interval">Sau 60 ngày</span>
+        <span class="stage-card-desc">Ghi nhớ vĩnh viễn (Mastered)</span>
+      </div>
+    </div>
+
+    <div class="due-section-title">
+      <span>DANH SÁCH MỤC ĐẾN HẠN CẦN ÔN HÔM NAY (${dueItems.length})</span>
+      ${dueItems.length > 0 ? `<button class="button-primary btn-sm" data-action="quick-due-flashcard">⚡ Bắt đầu ôn tất cả</button>` : ''}
+    </div>
+
+    ${dueItems.length === 0 ? `
+      <div class="empty-panel" style="padding:32px 16px">
+        <div class="empty-symbol">🎉</div>
+        <h3>Không có mục nào đang bị quá hạn!</h3>
+        <p>Bạn đã hoàn thành rất tốt các phiên ôn tập hôm nay. Hãy tiếp tục giữ vững nhịp độ này nhé!</p>
+      </div>
+    ` : `
+      <div class="due-items-list">
+        ${dueItems.map(item => {
+          const card = item.card;
+          const stageInfo = getMemoryStageInfo(item.intervalDays);
+          const typeName = item.type === 'grammar' ? 'Mẫu câu' : item.type === 'kanji' ? 'Chữ Hán' : 'Từ vựng';
+          const mainTitle = card.japanese || card.pattern || card.title || card.character;
+          const subTitle = card.meaning || card.reading || '';
+
+          return `
+            <div class="due-item-row">
+              <div class="due-item-info">
+                <strong>${h(stripFurigana(mainTitle))} <small style="color:#705be4">(${typeName} · ${h(card.lessonTitle || '')})</small></strong>
+                <small>${h(subTitle)}</small>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span class="stage-pill" style="color:${stageInfo.color};background:${stageInfo.bg}">${stageInfo.label}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `}
+
+    <div style="margin-top:20px;text-align:right">
+      <button class="button-secondary" data-action="close-modals">Đóng cửa sổ</button>
+    </div>
+  `;
+
+  modal.style.display = 'flex';
+}
+
 function render() {
   mergeLessons();
   renderMetrics();
+  renderSpacedReminder();
   renderLessonOptions();
   switchTab(state.tab);
 }
@@ -1545,7 +1767,7 @@ async function markCard(rating) {
   const progressKey = `${username}:${card.key}`;
   const old = state.progress.get(progressKey) || state.progress.get(card.key);
   const prevInterval = old?.intervalDays || 0;
-  const intervalDays = rating === 'again' ? 0 : rating === 'good' ? Math.max(1, Math.round(prevInterval * 1.8)) : Math.max(3, Math.round(prevInterval * 2.5));
+  const intervalDays = calculateNextInterval(prevInterval, rating !== 'again', rating);
   const record = {
     key: progressKey,
     cardKey: card.key,
@@ -1921,6 +2143,33 @@ async function handleAction(button) {
   if (action === 'end-quiz') {
     state.quiz.session = null;
     renderView();
+    return;
+  }
+
+  // --- SPACED REPETITION REMINDER ACTIONS ---
+  if (action === 'quick-due-flashcard') {
+    document.querySelectorAll('.modal-overlay').forEach(el => el.style.display = 'none');
+    state.tab = 'practice';
+    state.flash.type = 'vocabulary';
+    state.flash.mode = 'due';
+    state.flash.index = 0;
+    render();
+    notify('⚡ Đang mở thẻ Flashcards đến hạn ôn tập hôm nay!');
+    return;
+  }
+  if (action === 'quick-due-quiz') {
+    document.querySelectorAll('.modal-overlay').forEach(el => el.style.display = 'none');
+    state.tab = 'quiz';
+    state.quiz.scope = 'all';
+    state.quiz.contentType = 'all';
+    state.quiz.mode = 'all_mix';
+    state.quiz.onlyReview = false;
+    render();
+    notify('❓ Đang mở Trắc nghiệm phản xạ tổng hợp để ôn tập kiến thức!');
+    return;
+  }
+  if (action === 'open-spaced-modal') {
+    openSpacedModal();
     return;
   }
 

@@ -64,6 +64,9 @@
 
         <section class="metrics" id="metrics" aria-label="Thống kê tổng quan"></section>
 
+        <!-- KHU VỰC NHẮC NHỞ & GỢI Ý ÔN TẬP SPACED REPETITION -->
+        <div id="spacedReminderArea"></div>
+
         <section class="work-area">
           <div class="section-heading"><div><div class="eyebrow" id="sectionEyebrow">YOUR LIBRARY</div><h2 id="sectionTitle">Từ vựng của bạn</h2><p id="sectionDescription">Ôn từ vựng mỗi ngày.</p></div><div class="section-count" id="sectionCount"></div></div>
           <div class="toolbar" id="toolbar"><label class="search-box" id="searchWrap"><span class="search-icon">⌕</span><input id="searchInput" type="search" placeholder="Tìm tiếng Nhật, phiên âm, nghĩa..." autocomplete="off" /><kbd>/</kbd></label><label class="select-wrap"><span>Bài học</span><select id="lessonSelect" aria-label="Lọc theo bài học"><option value="all">Tất cả bài học</option></select></label></div>
@@ -194,6 +197,17 @@
         <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
       </div>
       <div id="deleteConfirmBody"></div>
+    </div>
+  </div>
+
+  <!-- MODAL GỢI Ý & LỘ TRÌNH ÔN TẬP SPACED REPETITION -->
+  <div id="spacedModalOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3>🧠 Lộ trình Spaced Repetition & Đường cong Ebbinghaus</h3>
+        <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
+      </div>
+      <div id="spacedModalBody" class="spaced-modal-body"></div>
     </div>
   </div>
 

@@ -325,20 +325,56 @@ export function buildQuizSession(itemsOrLessons, optionsOrMode = 'vocab_ja_vi', 
 }
 
 /**
- * Review state transition rule (Plan Section 7)
- * - Wrong answer -> added to needsReview list (status: 'learning', needsReview: true)
- * - Correct answer while in review -> removed from needsReview (status: 'known', needsReview: false, history preserved)
- * - Wrong answer again -> returned to needsReview
+ * Chu kỳ giãn cách khoa học Ebbinghaus & Leitner (ngày):
+ * - Giai đoạn 1: Sau 1 ngày (24h) - Ngăn chặn 70% lượng kiến thức bị quên sau ngày đầu.
+ * - Giai đoạn 2: Sau 3 ngày - Khơi dậy nơ-ron khi trí nhớ bắt đầu phai nhạt (Desirable Difficulty).
+ * - Giai đoạn 3: Sau 7 ngày (1 tuần) - Củng cố liên kết trí nhớ trung hạn.
+ * - Giai đoạn 4: Sau 14 ngày (2 tuần) - Rèn luyện phản xạ ngữ nghĩa tự nhiên.
+ * - Giai đoạn 5: Sau 30 ngày (1 tháng) - Khắc sâu vào trí nhớ dài hạn.
+ * - Giai đoạn 6: Sau 60 ngày (2 tháng) - Ghi nhớ vĩnh viễn (Mastered).
+ */
+export const SCIENTIFIC_SPACED_INTERVALS = [1, 3, 7, 14, 30, 60];
+
+export function calculateNextInterval(currentInterval = 0, isCorrect = true, rating = 'good') {
+  if (!isCorrect || rating === 'again') {
+    return 0; // Cần ôn lại ngay hôm nay
+  }
+  if (rating === 'easy') {
+    if (currentInterval < 1) return 3;
+    if (currentInterval < 3) return 7;
+    if (currentInterval < 7) return 14;
+    if (currentInterval < 14) return 30;
+    return Math.max(60, Math.round(currentInterval * 2.5));
+  }
+  // Đánh giá 'good' / đúng
+  if (currentInterval < 1) return 1;
+  if (currentInterval < 3) return 3;
+  if (currentInterval < 7) return 7;
+  if (currentInterval < 14) return 14;
+  if (currentInterval < 30) return 30;
+  return 60;
+}
+
+/**
+ * Review state transition rule (Plan Section 7) + Spaced Repetition Schedule
+ * - Wrong answer -> added to needsReview list (status: 'learning', needsReview: true, intervalDays: 0, dueAt: now)
+ * - Correct answer -> removed from needsReview (status: 'known', needsReview: false, intervalDays tăng theo chu kỳ Ebbinghaus)
+ * - Wrong answer again -> returned to needsReview, intervalDays reset về 0
  */
 export function updateReviewStatus(currentRecord, isCorrect) {
   const reviews = (currentRecord?.reviews || 0) + 1;
   const now = Date.now();
+  const currentInterval = currentRecord?.intervalDays || 0;
+  const intervalDays = calculateNextInterval(currentInterval, isCorrect, 'good');
+  const dueAt = intervalDays === 0 ? now : now + intervalDays * 86400000;
 
   if (!isCorrect) {
     return {
       status: 'learning',
       needsReview: true,
       reviews,
+      intervalDays: 0,
+      dueAt: now,
       lastAnsweredAt: now,
       updatedAt: now
     };
@@ -348,6 +384,8 @@ export function updateReviewStatus(currentRecord, isCorrect) {
     status: 'known',
     needsReview: false,
     reviews,
+    intervalDays,
+    dueAt,
     lastAnsweredAt: now,
     updatedAt: now
   };
