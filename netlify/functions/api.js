@@ -80,32 +80,46 @@ async function connectToDatabase() {
   }
 
   if (connectionPromise) return connectionPromise;
+
+  const maskedUri = uri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@');
+  console.log(`[DB Connect] Bắt đầu kết nối MongoDB...`);
+  console.log(`[DB Connect] URI scheme: ${uri.startsWith('mongodb+srv://') ? 'SRV (mongodb+srv)' : 'Direct (mongodb)'}`);
+  console.log(`[DB Connect] Masked URI: ${maskedUri}`);
+
   connectionPromise = (async () => {
     let client;
     try {
       client = new MongoClient(uri, {
         maxPoolSize: 10,
-        serverSelectionTimeoutMS: 5000
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+        socketTimeoutMS: 15000
       });
+      console.log(`[DB Connect] MongoClient đã tạo, đang gọi client.connect()...`);
       await client.connect();
-    } catch (firstError) {
-      // Nếu lỗi do SRV / DNS lookup trong môi trường Edge (Cloudflare Workers)
-      if (uri.startsWith('mongodb+srv://') && typeof fetch === 'function') {
-        console.warn('[DB Connect] Thử phân giải SRV sang direct replica-set do lỗi ban đầu:', firstError.name, firstError.message);
-        const directUri = await resolveMongoSrvViaDoH(uri);
-        if (directUri && directUri !== uri) {
-          await client?.close().catch(() => {});
-          client = new MongoClient(directUri, {
-            maxPoolSize: 10,
-            serverSelectionTimeoutMS: 5000
-          });
-          await client.connect();
-        } else {
-          throw firstError;
-        }
-      } else {
-        throw firstError;
+      console.log(`[DB Connect] ✅ client.connect() thành công!`);
+    } catch (connectError) {
+      console.error(`[DB Connect] ❌ client.connect() THẤT BẠI!`);
+      console.error(`[DB Connect]   Loại lỗi: ${connectError.name}`);
+      console.error(`[DB Connect]   Message: ${connectError.message}`);
+      if (connectError.cause) {
+        console.error(`[DB Connect]   Cause name: ${connectError.cause.name}`);
+        console.error(`[DB Connect]   Cause message: ${connectError.cause.message}`);
+        if (connectError.cause.code) console.error(`[DB Connect]   Cause code: ${connectError.cause.code}`);
+        if (connectError.cause.syscall) console.error(`[DB Connect]   Cause syscall: ${connectError.cause.syscall}`);
+        if (connectError.cause.hostname) console.error(`[DB Connect]   Cause hostname: ${connectError.cause.hostname}`);
       }
+      if (connectError.reason) {
+        const reason = connectError.reason;
+        console.error(`[DB Connect]   Topology type: ${reason.type}`);
+        if (reason.servers) {
+          for (const [addr, desc] of reason.servers) {
+            console.error(`[DB Connect]   Server ${addr}: type=${desc.type}, error=${desc.error?.message || 'none'}`);
+          }
+        }
+      }
+      await client?.close().catch(() => {});
+      throw connectError;
     }
 
     try {
@@ -117,8 +131,10 @@ async function connectToDatabase() {
       await seedDatabaseIfEmpty(db);
       cachedClient = client;
       cachedDb = db;
+      console.log(`[DB Connect] ✅ Kết nối và tạo index hoàn tất.`);
       return { client, db };
     } catch (error) {
+      console.error(`[DB Connect] ❌ Lỗi sau khi connect (index/seed): ${error.message}`);
       await client.close().catch(() => {});
       throw error;
     }
@@ -196,13 +212,43 @@ export async function handler(event, context) {
       console.error('[Health Check Error]:', err);
       const uri = process.env.MONGODB_URI;
       const maskedUri = uri ? uri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@') : null;
+      const uriScheme = uri ? (uri.startsWith('mongodb+srv://') ? 'SRV' : 'Direct') : 'N/A';
+      
+      // Thu thập chi tiết lỗi từ cause chain
+      const causeInfo = err.cause ? {
+        name: err.cause.name,
+        message: err.cause.message,
+        code: err.cause.code,
+        syscall: err.cause.syscall,
+        hostname: err.cause.hostname
+      } : null;
+
+      // Thu thập thông tin topology servers nếu có
+      let serverDetails = null;
+      if (err.reason && err.reason.servers) {
+        serverDetails = {};
+        for (const [addr, desc] of err.reason.servers) {
+          serverDetails[addr] = {
+            type: desc.type,
+            error: desc.error?.message || null
+          };
+        }
+      }
+
       return res(200, {
         ok: false,
         database: 'error',
         message: err.message,
         name: err.name,
         hasMongoUri: !!uri,
-        maskedUri
+        uriScheme,
+        maskedUri,
+        cause: causeInfo,
+        servers: serverDetails,
+        hint: !uri ? 'Biến MONGODB_URI chưa được truyền vào Runtime. Kiểm tra Settings > Variables and secrets trên Cloudflare.'
+          : err.message.includes('timed out') ? 'Có thể do DNS SRV không phân giải được trên Edge runtime, hoặc IP chưa mở 0.0.0.0/0 trên MongoDB Atlas.'
+          : err.message.includes('Authentication') ? 'Username hoặc mật khẩu trong MONGODB_URI không đúng.'
+          : 'Xem chi tiết cause và servers để xác định nguyên nhân.'
       });
     }
   }
