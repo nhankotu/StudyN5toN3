@@ -87,10 +87,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`🚀 Nihongo Study Web App đang chạy tại:`);
-  console.log(`👉 http://localhost:${PORT}`);
-  console.log(`MongoDB URI: ${process.env.MONGODB_URI ? 'ĐÃ ĐƯỢC THIẾT LẬP ✓' : 'CHƯA THIẾT LẬP (Hãy điền vào file .env)'}`);
-  console.log(`======================================================\n`);
-});
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`\n======================================================`);
+    console.log(`🚀 Nihongo Study Web App đang chạy tại:`);
+    console.log(`👉 http://localhost:${PORT}`);
+    console.log(`MongoDB URI: ${process.env.MONGODB_URI ? 'ĐÃ ĐƯỢC THIẾT LẬP ✓' : 'CHƯA THIẾT LẬP (Hãy điền vào file .env)'}`);
+    console.log(`======================================================\n`);
+  });
+}
+
+export default server;
