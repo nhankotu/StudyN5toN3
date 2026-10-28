@@ -88,8 +88,30 @@ test('evaluateKanjiDrawing handles empty canvas and missing reference gracefully
   const emptyRes = evaluateKanjiDrawing([], [{ x: 0, y: 0 }], 300);
   assert.equal(emptyRes.score, 0);
   assert.equal(emptyRes.passed, false);
+  assert.ok(emptyRes.feedback.includes('Chưa có nét vẽ'));
 
   const noRefRes = evaluateKanjiDrawing([[{ x: 0, y: 0 }, { x: 10, y: 10 }]], null, 300);
   assert.equal(noRefRes.score, null);
   assert.equal(noRefRes.passed, null);
+});
+
+test('getKanjiStrokes provides strokePaths, svgContent and supports new prepackaged kanji like 私 (7 strokes)', async () => {
+  const watashi = await getKanjiStrokes('私');
+  assert.ok(watashi);
+  assert.equal(watashi.length, 7);
+  assert.equal(watashi.strokeCount, 7);
+  assert.equal(watashi.strokePaths.length, 7);
+  assert.ok(watashi.svgContent.includes('<svg'));
+  assert.equal(watashi.strokes, watashi);
+
+  // Evaluate with options object
+  const canvasSize = 300;
+  const scale = canvasSize / 100;
+  const userStrokes = watashi.map(s => s.map(p => ({ x: p.x * scale, y: p.y * scale })));
+
+  const evalRes = evaluateKanjiDrawing(userStrokes, watashi, { canvasSize: 300, mode: 'shape', threshold: 80 });
+  assert.equal(evalRes.passed, true);
+  assert.equal(evalRes.expectedStrokeCount, 7);
+  assert.equal(evalRes.userStrokeCount, 7);
+  assert.ok(evalRes.feedback.includes('Tốt'));
 });

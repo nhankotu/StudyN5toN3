@@ -89,40 +89,68 @@ export function strokeDistance(s1, s2) {
  * Evaluates user drawn strokes against reference strokes.
  * @param {Array<Array<{x:number, y:number}>>} userStrokes Drawn strokes on canvas
  * @param {Array<Array<{x:number, y:number}>>} refStrokes Reference strokes (scaled to 100x100)
- * @param {number} canvasSize Size of the square canvas (e.g. 300)
+ * @param {number|object} canvasSize Size of the square canvas (e.g. 300) or options object
  * @param {'shape'|'strict'} mode Evaluation mode
- * @returns {{ score: number, passed: boolean, strokeCountMatch: boolean, details: object }}
+ * @returns {{ score: number, passed: boolean, strokeCountMatch: boolean, feedback: string, message: string, expectedStrokeCount: number, details: object }}
  */
 export function evaluateKanjiDrawing(userStrokes, refStrokes, canvasSize = 300, mode = 'shape') {
+  let actualCanvasSize = 300;
+  let actualMode = 'shape';
+  let actualThreshold = 80;
+
+  if (typeof canvasSize === 'object' && canvasSize !== null) {
+    actualCanvasSize = canvasSize.canvasSize || 300;
+    actualMode = canvasSize.mode || 'shape';
+    actualThreshold = canvasSize.threshold || 80;
+  } else {
+    actualCanvasSize = typeof canvasSize === 'number' ? canvasSize : 300;
+    actualMode = typeof mode === 'string' ? mode : 'shape';
+  }
+
+  // Handle refStrokes if passed as { strokes: [...] } or array
+  const rawRef = Array.isArray(refStrokes) ? refStrokes : (refStrokes?.strokes || null);
+
   if (!userStrokes || userStrokes.length === 0) {
+    const refCount = rawRef?.length || 0;
     return {
       score: 0,
       passed: false,
       strokeCountMatch: false,
-      message: 'Chưa có nét vẽ nào trên khung.',
-      details: { strokeCount: 0, refCount: refStrokes?.length || 0 }
+      userStrokeCount: 0,
+      expectedStrokeCount: refCount,
+      refStrokeCount: refCount,
+      feedback: 'Chưa có nét vẽ nào trên khung. Hãy viết chữ vào ô và thử lại!',
+      message: 'Chưa có nét vẽ nào trên khung. Hãy viết chữ vào ô và thử lại!',
+      mode: actualMode,
+      threshold: actualThreshold,
+      details: { strokeCount: 0, refCount }
     };
   }
 
-  if (!refStrokes || refStrokes.length === 0) {
-    // Không có mẫu tham khảo -> không tự chấm
+  if (!rawRef || rawRef.length === 0) {
     return {
       score: null,
       passed: null,
       strokeCountMatch: null,
-      message: 'Chưa có dữ liệu nét chuẩn KanjiVG cho chữ này. Vui lòng tự đối chiếu.',
+      userStrokeCount: userStrokes.length,
+      expectedStrokeCount: 0,
+      refStrokeCount: 0,
+      feedback: 'Chưa có dữ liệu nét chuẩn KanjiVG cho chữ này. Vui lòng tự đối chiếu với mẫu.',
+      message: 'Chưa có dữ liệu nét chuẩn KanjiVG cho chữ này. Vui lòng tự đối chiếu với mẫu.',
+      mode: actualMode,
+      threshold: actualThreshold,
       details: {}
     };
   }
 
   // 1. Normalize user strokes to 100x100 coordinate space
-  const scale = 100 / (canvasSize || 300);
+  const scale = 100 / (actualCanvasSize || 300);
   const normalizedUser = userStrokes
     .filter(s => s && s.length >= 2)
     .map(stroke => stroke.map(p => ({ x: p.x * scale, y: p.y * scale })))
     .map(stroke => resampleStroke(stroke, 20));
 
-  const normalizedRef = refStrokes.map(stroke => resampleStroke(stroke, 20));
+  const normalizedRef = rawRef.map(stroke => resampleStroke(stroke, 20));
 
   const userCount = normalizedUser.length;
   const refCount = normalizedRef.length;
@@ -133,7 +161,7 @@ export function evaluateKanjiDrawing(userStrokes, refStrokes, canvasSize = 300, 
 
   let strokeScores = [];
 
-  if (mode === 'strict') {
+  if (actualMode === 'strict') {
     // Chế độ nghiêm ngặt: Kiểm tra đúng thứ tự và hướng nét vẽ
     const compareCount = Math.min(userCount, refCount);
     for (let i = 0; i < compareCount; i++) {
@@ -183,15 +211,37 @@ export function evaluateKanjiDrawing(userStrokes, refStrokes, canvasSize = 300, 
 
   // Final score deduction for stroke count mismatch
   let finalScore = Math.round(Math.max(0, Math.min(100, avgStrokeScore - countPenalty * 0.4)));
+  const passed = finalScore >= actualThreshold;
+
+  // Construct clear, user-friendly Vietnamese feedback
+  let feedback = '';
+  if (passed) {
+    if (actualMode === 'strict') {
+      feedback = `Rất tốt! Bạn đã vẽ chuẩn thứ tự và hướng các nét (${finalScore}/100 điểm).`;
+    } else {
+      feedback = `Tốt! Hình dạng tổng thể của chữ rất đẹp và cân đối (${finalScore}/100 điểm).`;
+    }
+  } else {
+    if (userCount !== refCount) {
+      feedback = `Số nét chưa khớp: Bạn vẽ ${userCount} nét trong khi chữ mẫu có ${refCount} nét (${finalScore}/100 điểm). Hãy thử viết lại!`;
+    } else if (actualMode === 'strict') {
+      feedback = `Cần lưu ý thứ tự nét hoặc hướng đưa bút chưa khớp chuẩn (${finalScore}/100 điểm). Hãy xem chữ mẫu và thử lại!`;
+    } else {
+      feedback = `Độ khớp hình dạng nét chưa đạt yêu cầu (${finalScore}/100 điểm). Hãy thử viết lại!`;
+    }
+  }
 
   return {
     score: finalScore,
-    passed: finalScore >= 80,
+    passed,
     strokeCountMatch: userCount === refCount,
     userStrokeCount: userCount,
+    expectedStrokeCount: refCount,
     refStrokeCount: refCount,
-    mode,
-    threshold: 80,
+    feedback,
+    message: feedback,
+    mode: actualMode,
+    threshold: actualThreshold,
     details: {
       avgStrokeScore: Math.round(avgStrokeScore),
       countPenalty,

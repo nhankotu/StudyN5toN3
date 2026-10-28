@@ -2,7 +2,8 @@
   "_huong_dan_cho_nguoi_dung_va_ai": {
     "muc_dich": "Mẫu bài học chuẩn cho ứng dụng Nihongo Study. Dùng để nhập trực tiếp vào web hoặc gửi cho AI (ChatGPT / Claude / Gemini) để chuyển đổi từ sách/giáo trình thành file JSON.",
     "quy_tac_furigana": "Viết [cách đọc Hiragana] ngay sau chữ Hán. Ví dụ: 私[わたし], 行[い]きます, 日本語[にほんご], 先生[せんせい]. Ứng dụng sẽ tự động sinh chữ nhỏ <ruby><rt> trên đầu chữ Hán.",
-    "luu_y_quan_trong": "Mỗi bài học PHẢI có id duy nhất (ví dụ: bai-01, bai-02, n5-bai-05). Phải có ít nhất 1 trong 3 phần: vocabulary (từ vựng), grammar (ngữ pháp), kanji (chữ Hán)."
+    "quy_tac_on_kun_katakana": "Âm On (onyomi) BẮT BUỘC viết bằng Katakana (ví dụ: ジン、ニン, ニチ、ジツ). Âm Kun (kunyomi) BẮT BUỘC viết bằng Hiragana (ví dụ: ひと, ひ、-び、-か). Bất kỳ từ mượn ngoại lai nào viết bằng Katakana (như アメリカ, コーヒー, パン, テレビ) thì BẮT BUỘC giữ nguyên Katakana, tuyệt đối không chuyển thành Hiragana.",
+    "luu_y_quan_trong": "Mỗi bài học PHẢI có id duy nhất (ví dụ: bai-01, bai-02, n5-bai-05). Trong mục kanji, trường character chỉ chứa ĐÚNG 1 ký tự chữ Hán đơn lẻ."
   },
   "id": "bai-01",
   "title": "Bài 1 – Giới thiệu bản thân & Chào hỏi",

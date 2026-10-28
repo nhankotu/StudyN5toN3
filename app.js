@@ -37,7 +37,8 @@ const state = {
     direction: 'forward',
     index: 0,
     flipped: false,
-    shuffledKeys: null
+    shuffledKeys: null,
+    isCompleted: false
   },
   kanjiWrite: {
     subTab: 'library', // 'library' | 'write'
@@ -47,6 +48,10 @@ const state = {
     currentStroke: [],
     isDrawing: false,
     showHint: false,
+    hintStrokeCount: 0,
+    showRef: false,
+    strokePaths: [],
+    totalStrokes: 0,
     lastResult: null,
     overrideResult: null,
     loadingStrokes: false,
@@ -60,6 +65,7 @@ const state = {
     history: [],
     contentType: 'all',
     mode: 'all_mix',
+    selectedLessonId: 'all',
     scope: 'current',
     onlyReview: false,
     limit: 10
@@ -138,8 +144,18 @@ function isDue(key) { return !state.progress.has(key) || (state.progress.get(key
 function renderMetrics() {
   const c = counts();
   const known = allCards('vocabulary', false).filter(card => isKnown(card.key)).length;
-  const metrics = [['▤', state.lessons.length, 'Bài học'], ['あ', c.vocabulary, 'Từ vựng'], ['文', c.grammar, 'Mẫu câu'], ['漢', c.kanji, 'Chữ Hán']];
-  $('metrics').innerHTML = metrics.map(([ico, num, label]) => `<article class="metric"><span class="metric-icon">${ico}</span><span class="metric-body"><strong>${num}</strong><small>${label}</small></span></article>`).join('');
+  const metrics = [
+    ['▤', state.lessons.length, 'Bài học', 'imports'],
+    ['あ', c.vocabulary, 'Từ vựng', 'vocabulary'],
+    ['文', c.grammar, 'Mẫu câu', 'grammar'],
+    ['漢', c.kanji, 'Chữ Hán', 'kanji']
+  ];
+  $('metrics').innerHTML = metrics.map(([ico, num, label, tab]) => `
+    <article class="metric clickable" data-tab="${tab}" role="button" tabindex="0" title="Bấm để chuyển sang tab ${label}">
+      <span class="metric-icon">${ico}</span>
+      <span class="metric-body"><strong>${num}</strong><small>${label}</small></span>
+    </article>
+  `).join('');
   renderSpacedReminder();
 }
 
@@ -483,6 +499,7 @@ function renderKanji() {
   const isStrict = state.kanjiWrite.mode === 'strict';
   const lastRes = state.kanjiWrite.lastResult;
   const manualRes = state.kanjiWrite.overrideResult;
+  const isRevealed = Boolean(lastRes || state.kanjiWrite.showRef);
 
   $('sectionCount').textContent = `Chữ ${idx + 1} / ${allKanjis.length}`;
 
@@ -492,7 +509,9 @@ function renderKanji() {
       <div class="kanji-canvas-panel">
         <div class="kanji-write-header">
           <div class="kanji-info-badge">
-            <span class="badge-char">${h(char)}</span>
+            <span class="badge-char ${!isRevealed ? 'badge-char-hidden' : ''}" data-action="toggle-kanji-peek" title="${!isRevealed ? 'Bấm để xem trước chữ mẫu nếu chưa nhớ' : 'Chữ Hán mẫu'}">
+              ${isRevealed ? h(char) : '?'}
+            </span>
             <div>
               <strong>${h(currentKanji.meaning)}</strong>
               <small>On: ${h(currentKanji.onyomi || '—')} · Kun: ${h(currentKanji.kunyomi || '—')}</small>
@@ -507,15 +526,32 @@ function renderKanji() {
         <div class="canvas-wrapper">
           <div class="canvas-crosshair"></div>
           <canvas id="kanjiCanvas" width="300" height="300" aria-label="Bảng viết chữ Hán"></canvas>
-          ${state.kanjiWrite.showHint && state.kanjiWrite.loadedSvg ? `
-            <div class="kanji-hint-overlay">${state.kanjiWrite.loadedSvg}</div>
+          ${state.kanjiWrite.showHint && state.kanjiWrite.hintStrokeCount > 0 && state.kanjiWrite.strokePaths?.length ? `
+            <div class="kanji-hint-overlay">
+              <svg viewBox="0 0 109 109" class="kanji-hint-svg">
+                <g fill="none" stroke="#6366f1" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.38">
+                  ${state.kanjiWrite.strokePaths.slice(0, state.kanjiWrite.hintStrokeCount).map((d, i) => `
+                    <path d="${d}" data-stroke="${i+1}" />
+                  `).join('')}
+                </g>
+              </svg>
+            </div>
           ` : ''}
         </div>
 
         <div class="kanji-canvas-toolbar">
           <button class="button-primary" data-action="submit-kanji-draw">✓ Xong &amp; Chấm điểm</button>
           <button class="button-secondary" data-action="clear-kanji-draw">↺ Viết lại</button>
-          <button class="button-subtle" data-action="toggle-kanji-hint">${state.kanjiWrite.showHint ? 'Ẩn nét mờ' : '👁 Gợi ý nét mờ'}</button>
+          <button class="button-subtle" data-action="toggle-kanji-hint">
+            ${state.kanjiWrite.hintStrokeCount > 0
+              ? (state.kanjiWrite.hintStrokeCount === (state.kanjiWrite.totalStrokes || state.kanjiWrite.strokePaths?.length)
+                  ? `Ẩn nét mờ (${state.kanjiWrite.hintStrokeCount}/${state.kanjiWrite.totalStrokes || state.kanjiWrite.strokePaths?.length})`
+                  : `👁 Gợi ý nét (${state.kanjiWrite.hintStrokeCount}/${state.kanjiWrite.totalStrokes || state.kanjiWrite.strokePaths?.length})`)
+              : `👁 Gợi ý nét mờ (0/${state.kanjiWrite.totalStrokes || state.kanjiWrite.strokePaths?.length || '?'})`}
+          </button>
+          <button class="button-subtle" data-action="toggle-kanji-peek" title="Hiện hoặc ẩn chữ mẫu trước khi vẽ">
+            ${state.kanjiWrite.showRef ? 'Ẩn chữ mẫu' : '👁 Xem chữ mẫu'}
+          </button>
           <button class="button-subtle audio-btn" data-action="speak" data-text="${h(stripFurigana(currentKanji.examples?.[0]?.word || char))}" title="Phát âm">♫</button>
         </div>
 
@@ -526,45 +562,47 @@ function renderKanji() {
         </div>
       </div>
 
-      <!-- CỘT KẾT QUẢ & CHỮ MẪU KANJIVG -->
+      <!-- CỘT KẾT QUẢ & ĐÁP ÁN (CHỈ HIỆN ĐÁP ÁN KHI ĐÃ NHẤN CHẤM ĐIỂM HOẶC BẤM XEM) -->
       <div class="kanji-feedback-panel">
-        ${lastRes ? `
-          <div class="grade-card ${(manualRes ?? lastRes.passed) ? 'grade-pass' : 'grade-fail'}">
-            <div class="grade-header">
-              <span class="grade-score">${lastRes.score}<small>/100</small></span>
-              <span class="grade-badge">${(manualRes ?? lastRes.passed) ? 'ĐẠT (≥80)' : 'CHƯA ĐẠT (&lt;80)'}</span>
-            </div>
-            <p class="grade-feedback">${h(lastRes.feedback)}</p>
-            ${lastRes.strokeCountMatch === false ? `<p class="stroke-warning">⚠ Số nét đã vẽ: ${lastRes.userStrokeCount} nét (Chữ mẫu chuẩn: ${lastRes.expectedStrokeCount} nét).</p>` : ''}
+        ${isRevealed ? `
+          ${lastRes ? `
+            <div class="grade-card ${(manualRes ?? lastRes.passed) ? 'grade-pass' : 'grade-fail'}">
+              <div class="grade-header">
+                <span class="grade-score">${lastRes.score}<small>/100</small></span>
+                <span class="grade-badge">${(manualRes ?? lastRes.passed) ? 'ĐẠT (≥80)' : 'CHƯA ĐẠT (&lt;80)'}</span>
+              </div>
+              <p class="grade-feedback">${h(lastRes.feedback || lastRes.message)}</p>
+              ${lastRes.strokeCountMatch === false ? `<p class="stroke-warning">⚠ Số nét đã vẽ: ${lastRes.userStrokeCount} nét (Chữ mẫu chuẩn: ${lastRes.expectedStrokeCount || lastRes.refStrokeCount} nét).</p>` : ''}
 
-            <!-- Nút điều chỉnh đánh giá thủ công của người dùng -->
-            <div class="override-box">
-              <small>Thuật toán chấm chưa chính xác theo cảm nhận?</small>
-              <div class="override-btns">
-                <button class="btn-override pass ${manualRes === true ? 'active' : ''}" data-action="override-grade" data-status="pass">Đánh dấu Đạt</button>
-                <button class="btn-override fail ${manualRes === false ? 'active' : ''}" data-action="override-grade" data-status="fail">Đánh dấu Cần luyện lại</button>
+              <!-- Nút điều chỉnh đánh giá thủ công của người dùng -->
+              <div class="override-box">
+                <small>Thuật toán chấm chưa chính xác theo cảm nhận?</small>
+                <div class="override-btns">
+                  <button class="btn-override pass ${manualRes === true ? 'active' : ''}" data-action="override-grade" data-status="pass">Đánh dấu Đạt</button>
+                  <button class="btn-override fail ${manualRes === false ? 'active' : ''}" data-action="override-grade" data-status="fail">Đánh dấu Cần luyện lại</button>
+                </div>
               </div>
             </div>
+          ` : ''}
+
+          <!-- ĐÁP ÁN: CHỮ MẪU VÀ THỨ TỰ NÉT KANJIVG (ẨN ĐI KHI VIẾT LẠI, CHỈ HIỆN KHI ĐÃ CHẤM ĐIỂM HOẶC XEM ĐÁP ÁN) -->
+          <div class="kanjivg-reference-card">
+            <div class="ref-header">
+              <strong>Đáp án &amp; Thứ tự nét (KanjiVG)</strong>
+              <span class="ref-badge">${state.kanjiWrite.loadedSvg ? 'Chuẩn KanjiVG' : 'Tự đối chiếu'}</span>
+            </div>
+            <div class="kanjivg-preview-container" id="kanjivgPreviewBox">
+              ${state.kanjiWrite.loadedSvg ? state.kanjiWrite.loadedSvg : `<div class="sample-char-text">${h(char)}</div>`}
+            </div>
+            <p class="license-attribution">${KANJIVG_ATTRIBUTION.author} (KanjiVG) · Giấy phép CC BY-SA 3.0.</p>
           </div>
         ` : `
           <div class="grade-placeholder">
             <span class="empty-symbol" style="width:48px;height:48px;font-size:24px">✍</span>
             <strong>Hãy dùng chuột, ngón tay hoặc bút viết chữ vào ô bên trái</strong>
-            <p>Nhấn "Xong &amp; Chấm điểm" để thuật toán kiểm tra từng nét theo chuẩn KanjiVG. Chữ mẫu sẽ hiện ra sau khi bạn hoàn thành!</p>
+            <p>Đề bài chỉ hiển thị nghĩa và âm đọc để bạn rèn luyện trí nhớ. Nhấn "✓ Xong &amp; Chấm điểm" để chấm điểm hoặc bấm "👁 Xem chữ mẫu" khi muốn tham khảo!</p>
           </div>
         `}
-
-        <!-- HIỂN THỊ CHỮ MẪU VÀ BẢN QUYỀN KANJIVG -->
-        <div class="kanjivg-reference-card">
-          <div class="ref-header">
-            <strong>Chữ mẫu &amp; Thứ tự nét (KanjiVG)</strong>
-            <span class="ref-badge">${state.kanjiWrite.loadedSvg ? 'Chuẩn KanjiVG' : 'Tự đối chiếu'}</span>
-          </div>
-          <div class="kanjivg-preview-container" id="kanjivgPreviewBox">
-            ${state.kanjiWrite.loadedSvg ? state.kanjiWrite.loadedSvg : `<div class="sample-char-text">${h(char)}</div>`}
-          </div>
-          <p class="license-attribution">${KANJIVG_ATTRIBUTION}. Giấy phép CC BY-SA 3.0.</p>
-        </div>
       </div>
     </div>
   `;
@@ -643,6 +681,14 @@ function toggleReverse() {
 }
 
 
+function formatDuration(ms) {
+  const totalSec = Math.max(1, Math.round(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m === 0) return `${s} giây`;
+  return `${m} phút ${s > 0 ? `${s} giây` : ''}`;
+}
+
 function renderQuiz() {
   const accessibleLessons = state.lessons;
   const currentLessonId = state.lessonId;
@@ -652,22 +698,35 @@ function renderQuiz() {
     const currentContentType = state.quiz.contentType || 'all';
     const username = state.currentUser?.username || 'default';
 
-    // Calculate how many items need review in the current scope
-    const targetLessons = state.quiz.scope === 'current' && state.lessonId !== 'all'
-      ? state.lessons.filter(l => l.id === state.lessonId)
-      : state.lessons;
+    // Xác định bài học trắc nghiệm: Nếu user đã chọn bài cụ thể trong quiz thì dùng, nếu chưa thì đồng bộ theo state.lessonId
+    let selectedLessonId = state.quiz.selectedLessonId;
+    if (!selectedLessonId) {
+      selectedLessonId = state.lessonId !== 'all' ? state.lessonId : 'all';
+      state.quiz.selectedLessonId = selectedLessonId;
+    }
+
+    const targetLessons = selectedLessonId === 'all'
+      ? state.lessons
+      : state.lessons.filter(l => l.id === selectedLessonId);
 
     let reviewCount = 0;
+    let totalItemsCount = 0;
     for (const l of targetLessons) {
       const checkKeys = [];
       if (currentContentType === 'all' || currentContentType === 'vocabulary') {
-        (l.vocabulary || []).forEach(v => checkKeys.push(`${l.id}:vocabulary:${v.id}`));
+        const vList = l.vocabulary || [];
+        totalItemsCount += vList.length;
+        vList.forEach(v => checkKeys.push(`${l.id}:vocabulary:${v.id}`));
       }
       if (currentContentType === 'all' || currentContentType === 'grammar') {
-        (l.grammar || []).forEach(g => checkKeys.push(`${l.id}:grammar:${g.id}`));
+        const gList = l.grammar || [];
+        totalItemsCount += gList.length;
+        gList.forEach(g => checkKeys.push(`${l.id}:grammar:${g.id}`));
       }
       if (currentContentType === 'all' || currentContentType === 'kanji') {
-        (l.kanji || []).forEach(k => checkKeys.push(`${l.id}:kanji:${k.id}`));
+        const kList = l.kanji || [];
+        totalItemsCount += kList.length;
+        kList.forEach(k => checkKeys.push(`${l.id}:kanji:${k.id}`));
       }
 
       for (const cardKey of checkKeys) {
@@ -675,6 +734,25 @@ function renderQuiz() {
         const rec = state.progress.get(progressKey) || state.progress.get(cardKey);
         if (rec?.needsReview) reviewCount++;
       }
+    }
+
+    const maxAvailable = state.quiz.onlyReview ? reviewCount : totalItemsCount;
+
+    // Tự động kiểm tra: nếu số câu đang chọn vượt quá tối đa trong bài thì tự động chuyển về tối đa
+    let currentLimit = state.quiz.limit;
+    if (typeof currentLimit === 'number' && maxAvailable > 0 && currentLimit > maxAvailable) {
+      currentLimit = maxAvailable;
+      state.quiz.limit = maxAvailable;
+    } else if (typeof currentLimit !== 'number' || currentLimit < 1) {
+      currentLimit = Math.min(10, maxAvailable || 10);
+      state.quiz.limit = currentLimit;
+    }
+
+    // Các mốc chọn nhanh: Chỉ hiển thị các mốc <= maxAvailable (không hiện mốc quá số câu tối đa)
+    const presetCandidates = [5, 10, 20, 30];
+    const availablePresets = presetCandidates.filter(p => p < maxAvailable);
+    if (maxAvailable > 0 && !availablePresets.includes(maxAvailable)) {
+      availablePresets.push(maxAvailable);
     }
 
     let modeOptionsHtml = '';
@@ -718,6 +796,20 @@ function renderQuiz() {
 
         <div class="quiz-setup-grid">
           <div class="quiz-config-field">
+            <label for="quizLessonSelect">Chọn bài học kiểm tra</label>
+            <select id="quizLessonSelect">
+              <option value="all" ${selectedLessonId === 'all' ? 'selected' : ''}>📚 Tất cả bài học (Toàn bộ kho bài - ${state.lessons.length} bài)</option>
+              ${state.lessons.map(l => {
+                const vCount = (l.vocabulary || []).length;
+                const gCount = (l.grammar || []).length;
+                const kCount = (l.kanji || []).length;
+                const total = vCount + gCount + kCount;
+                return `<option value="${h(l.id)}" ${selectedLessonId === l.id ? 'selected' : ''}>📖 ${h(l.title)} (${total} câu: ${vCount} từ, ${gCount} ngữ pháp, ${kCount} kanji)</option>`;
+              }).join('')}
+            </select>
+          </div>
+
+          <div class="quiz-config-field">
             <label for="quizContentTypeSelect">Nội dung học trắc nghiệm</label>
             <select id="quizContentTypeSelect">
               <option value="all" ${currentContentType === 'all' ? 'selected' : ''}>📚 Cả bài (Trộn Từ vựng, Mẫu câu & Chữ Hán)</option>
@@ -735,21 +827,23 @@ function renderQuiz() {
           </div>
 
           <div class="quiz-config-field">
-            <label for="quizScopeSelect">Phạm vi bài học</label>
-            <select id="quizScopeSelect">
-              <option value="current" ${state.quiz.scope === 'current' ? 'selected' : ''}>Chỉ trong bài học đang chọn (${state.lessonId === 'all' ? 'Tất cả bài học' : (state.lessons.find(l=>l.id===state.lessonId)?.title || state.lessonId)})</option>
-              <option value="all" ${state.quiz.scope === 'all' ? 'selected' : ''}>Toàn bộ các bài học bạn có quyền xem (${state.lessons.length} bài)</option>
-            </select>
-          </div>
-
-          <div class="quiz-config-field">
-            <label for="quizLimitSelect">Số lượng câu hỏi</label>
-            <select id="quizLimitSelect">
-              <option value="10" ${state.quiz.limit === 10 ? 'selected' : ''}>10 câu</option>
-              <option value="20" ${state.quiz.limit === 20 ? 'selected' : ''}>20 câu</option>
-              <option value="30" ${state.quiz.limit === 30 ? 'selected' : ''}>30 câu</option>
-              <option value="all" ${state.quiz.limit === 'all' ? 'selected' : ''}>Tất cả các câu trong phạm vi</option>
-            </select>
+            <label for="quizLimitInput">
+              <span>Số lượng câu hỏi (Tối đa trong bài: <strong>${maxAvailable}</strong> câu)</span>
+            </label>
+            <div class="quiz-limit-input-wrap">
+              <input type="number" id="quizLimitInput" min="1" max="${maxAvailable}" value="${currentLimit}" placeholder="Nhập số câu..." aria-label="Số câu hỏi muốn làm" />
+              <span class="quiz-limit-suffix">câu</span>
+            </div>
+            ${availablePresets.length > 0 ? `
+              <div class="quiz-preset-chips">
+                <span class="preset-label">Mốc chọn:</span>
+                ${availablePresets.map(p => `
+                  <button type="button" class="btn-preset-chip ${currentLimit === p ? 'active' : ''}" data-action="set-quiz-limit" data-limit="${p}">
+                    ${p === maxAvailable ? `Tối đa (${p} câu)` : `${p} câu`}
+                  </button>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
 
           <div class="quiz-config-field">
@@ -759,8 +853,8 @@ function renderQuiz() {
             </label>
             <div style="font-size:11px;margin-top:4px;padding-left:28px;color:${reviewCount > 0 ? '#6e58e4' : '#8c93a8'}">
               ${reviewCount > 0
-                ? `🔥 Bạn đang có <strong>${reviewCount}</strong> câu đã từng làm sai cần ôn lại.`
-                : `✦ Bạn chưa có câu nào làm sai (Danh sách cần ôn tập đang trống). Bạn hãy bấm <strong>"▶ Bắt đầu làm trắc nghiệm"</strong> bên dưới để làm bài ngay!`}
+                ? `🔥 Bạn đang có <strong>${reviewCount}</strong> câu đã từng làm sai trong phạm vi này cần ôn lại.`
+                : `✦ Bạn chưa có câu nào làm sai trong bài học này. Bạn hãy bấm <strong>"✓ Xác nhận & Bắt đầu làm kiểm tra"</strong> bên dưới để làm bài ngay!`}
             </div>
           </div>
         </div>
@@ -770,8 +864,15 @@ function renderQuiz() {
           <p>${QUIZ_RULES_EXPLANATION}</p>
         </div>
 
-        <button class="button-primary btn-large" data-action="start-quiz-session" style="width:100%;margin-top:20px">
-          ▶ Bắt đầu làm trắc nghiệm
+        ${maxAvailable === 0 ? `
+          <div class="quiz-empty-warning" style="margin-top:16px;padding:12px 16px;background:#fff1f2;border:1px solid #fecdd3;border-radius:10px;color:#e11d48;font-size:13px;display:flex;align-items:center;gap:8px">
+            <span>⚠️</span>
+            <span>Bài học đã chọn hiện không có câu hỏi nào phù hợp với bộ lọc <strong>${currentContentType === 'vocabulary' ? 'Từ vựng' : currentContentType === 'grammar' ? 'Mẫu câu' : currentContentType === 'kanji' ? 'Chữ Hán' : 'nội dung'}</strong>. Vui lòng chọn bài học khác hoặc chuyển nội dung sang "Cả bài".</span>
+          </div>
+        ` : ''}
+
+        <button class="button-primary btn-large" data-action="start-quiz-session" style="width:100%;margin-top:20px" ${maxAvailable === 0 ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : ''}>
+          ✓ Xác nhận &amp; Bắt đầu làm kiểm tra (${currentLimit} câu)
         </button>
       </div>
     `;
@@ -787,13 +888,39 @@ function renderQuiz() {
     const correctCount = history.filter(h => h.isCorrect).length;
     const total = history.length;
     const percent = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const durationMs = Math.max(1000, (state.quiz.endTime || Date.now()) - (state.quiz.startTime || Date.now()));
 
     return `
       <div class="quiz-summary-card">
         <div class="quiz-summary-icon">${percent >= 80 ? '🎉' : '💪'}</div>
-        <h2>Hoàn thành bài trắc nghiệm!</h2>
+        <h2>Hoàn thành bài kiểm tra trắc nghiệm!</h2>
         <div class="quiz-score-big">${correctCount} / ${total} <small>(${percent}%)</small></div>
-        <p>${percent >= 80 ? 'Rất tuyệt vời! Bạn đã ghi nhớ rất tốt các mục trong bài học.' : 'Hãy tiếp tục kiên trì! Các câu trả lời chưa đúng đã được lưu vào danh sách Cần ôn tập để bạn luyện lại.'}</p>
+        
+        <div class="quiz-summary-stats-grid">
+          <div class="quiz-stat-box">
+            <span class="quiz-stat-icon">⏱</span>
+            <div>
+              <span class="quiz-stat-val">${formatDuration(durationMs)}</span>
+              <span class="quiz-stat-lbl">Thời gian làm bài</span>
+            </div>
+          </div>
+          <div class="quiz-stat-box">
+            <span class="quiz-stat-icon">🎯</span>
+            <div>
+              <span class="quiz-stat-val">${correctCount} / ${total} câu</span>
+              <span class="quiz-stat-lbl">Số câu đúng</span>
+            </div>
+          </div>
+          <div class="quiz-stat-box">
+            <span class="quiz-stat-icon">📊</span>
+            <div>
+              <span class="quiz-stat-val" style="color:${percent >= 80 ? '#10b981' : '#f59e0b'}">${percent}%</span>
+              <span class="quiz-stat-lbl">Tỷ lệ chính xác</span>
+            </div>
+          </div>
+        </div>
+
+        <p>${percent >= 80 ? 'Rất xuất sắc! Bạn đã ghi nhớ rất tốt các mục trong bài học.' : 'Hãy tiếp tục kiên trì! Các câu trả lời chưa đúng đã được lưu vào danh sách Cần ôn tập để bạn luyện lại bất cứ lúc nào.'}</p>
         
         <div class="quiz-summary-actions">
           <button class="button-primary" data-action="restart-quiz">↺ Làm lại bài khác</button>
@@ -821,10 +948,12 @@ function renderQuiz() {
       </div>
 
       <div class="quiz-question-box">
-        <span class="quiz-question-type">${h((q.modeLabel || q.mode).toUpperCase().replace(/_/g, ' '))} · ${h(q.lessonTitle)}</span>
+        <div class="quiz-question-head">
+          <span class="quiz-question-type">${h((q.modeLabel || q.mode).toUpperCase().replace(/_/g, ' '))} · ${h(q.lessonTitle)}</span>
+          <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(speakText))}" title="Nghe phát âm">♫</button>
+        </div>
         <div class="quiz-prompt-text" lang="ja">${renderFurigana(q.prompt)}</div>
         ${q.promptReading ? `<div class="quiz-prompt-reading" lang="ja">${h(q.promptReading)}</div>` : ''}
-        <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(speakText))}" title="Nghe phát âm">♫</button>
       </div>
 
       <div class="quiz-options-grid">
@@ -897,6 +1026,53 @@ function renderPractice() {
     </div>
   </div>`;
 
+  // Màn hình khi đã hoàn thành lượt học hoặc thuộc toàn bộ bài
+  if (state.flash.isCompleted) {
+    const isFullMastery = total > 0 && known >= total;
+    const remainingCount = Math.max(0, total - known);
+    const completeMarkup = `
+      <div class="flash-complete-card">
+        <div class="complete-badge-icon">${isFullMastery ? '🏆' : '🎉'}</div>
+        <h2>${isFullMastery ? 'Tuyệt vời! Bạn đã thuộc toàn bộ bài học!' : 'Hoàn thành lượt học!'}</h2>
+        <p class="complete-subtitle">
+          ${isFullMastery 
+            ? `Bạn đã ghi nhớ xuất sắc toàn bộ <strong>${total}/${total}</strong> thẻ của nhóm này!` 
+            : `Bạn đã học xong lượt thẻ này. Hiện tại đã ghi nhớ <strong>${known}/${total}</strong> thẻ (${total ? Math.round((known/total)*100) : 0}%).`}
+        </p>
+        <div class="study-progress-bar" style="margin: 18px 0;">
+          <div class="study-progress-fill" style="width:${total ? (known/total)*100 : 0}%; background:${isFullMastery ? '#10b981' : '#6366f1'}"></div>
+        </div>
+        <div class="complete-stats-row">
+          <div class="stat-item"><span class="stat-num text-success">${known}</span><span class="stat-lbl">Đã thuộc</span></div>
+          <div class="stat-item"><span class="stat-num text-warning">${remainingCount}</span><span class="stat-lbl">Chưa thuộc</span></div>
+          <div class="stat-item"><span class="stat-num">${total}</span><span class="stat-lbl">Tổng thẻ</span></div>
+        </div>
+        <div class="complete-actions">
+          ${remainingCount > 0 ? `
+            <button class="button-primary" data-action="practice-unlearned">🧠 Tiếp tục ôn ${remainingCount} thẻ chưa thuộc</button>
+          ` : ''}
+          <button class="button-secondary" data-action="restart-flash">↺ Học lại nhóm thẻ này từ đầu</button>
+          <button class="button-subtle" data-action="start-quiz-from-lesson">📝 Làm trắc nghiệm bài này</button>
+        </div>
+      </div>
+    `;
+
+    return `<div class="study-layout">
+      <div class="study-panel">${filters}${completeMarkup}</div>
+      <div class="study-side">
+        <div class="study-aside-box">
+          <h3>✦ Tiến độ ghi nhớ</h3>
+          <div class="big-number">${known}<span style="font-size:15px;color:#aaa1d2"> / ${total}</span></div>
+          <p>Tài khoản: <strong>${h(state.currentUser?.name || state.currentUser?.username || 'Khách')}</strong>.<br/>${isCloudActive ? 'Tiến độ học tập được lưu trên đám mây.' : 'Tiến độ chỉ được lưu trên thiết bị này.'}</p>
+        </div>
+        <div class="study-aside-box study-tip">
+          <h3>☀ Mẹo ghi nhớ &amp; Chế độ ôn</h3>
+          <p>Bật <strong>Đảo mặt</strong> để luyện phản xạ từ nghĩa tiếng Việt sang chữ Nhật. Dùng <strong>Trộn thẻ</strong> để kiểm tra ngẫu nhiên tránh học vẹt theo thứ tự.</p>
+        </div>
+      </div>
+    </div>`;
+  }
+
   let cardFace = '';
   if (item) {
     if (!isReverse) {
@@ -934,11 +1110,13 @@ function renderPractice() {
       <button class="button-primary" data-action="mark" data-rating="easy">★ Rất dễ</button>
     </div>
     <div class="flash-nav">
-      <button data-action="prev">‹ Trước</button>
+      <button data-action="prev" ${state.flash.index <= 0 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>‹ Trước</button>
       <span>${h(item.lessonTitle)}</span>
       <div>
         <button data-action="speak" data-text="${h(stripFurigana(promptOf(item)))}" aria-label="Nghe phát âm">♫</button>
-        <button data-action="next">Tiếp ›</button>
+        ${state.flash.index >= length - 1 
+          ? `<button data-action="complete-flash" class="button-primary" style="padding:6px 14px;font-size:12px">Xong bài ✓</button>` 
+          : `<button data-action="next">Tiếp ›</button>`}
       </div>
     </div>`
     : empty('Không có thẻ để ôn', state.flash.mode==='all' ? 'Hãy tải bài học JSON có nội dung để tạo flashcards.' : 'Bạn đã học xong nhóm thẻ này. Đổi sang chế độ “Tất cả thẻ” để xem lại.', state.lessons.length===0);
@@ -961,23 +1139,44 @@ function renderPractice() {
 
 const AI_PROMPT_TEMPLATE = `Bạn là một chuyên gia tiếng Nhật. Hãy chuyển đổi toàn bộ nội dung/hình ảnh/giáo trình tiếng Nhật được cung cấp dưới đây thành file JSON chuẩn để nạp vào website học tiếng Nhật Nihongo Study.
 
-QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN FURIGANA:
-1. Furigana: Trong tất cả các từ và câu có chữ Hán, BẮT BUỘC viết cách đọc Hiragana trong ngoặc vuông ngay sau chữ Hán tương ứng theo cú pháp: Kanji[Hiragana].
-   Ví dụ:
-   - "私[わたし]" (Tôi)
-   - "行[い]きます" (Đi)
-   - "飛行機[ひこうき]" (Máy bay)
-   - "先生[せんせい]" (Thầy/Cô giáo)
-   - "明日[あした]、京都[きょうと]へ 行[い]きます。"
+QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN XÁC:
 
-2. CẤU TRÚC JSON PHẢI LÀ 1 OBJECT HOẶC MẢNG OBJECT VỚI CÁC TRƯỜNG:
+1. QUY TẮC FURIGANA VÀ CHỮ HÁN:
+- Trong tất cả các từ và câu có chữ Hán (ở phần vocabulary, grammar, reading, kanji), BẮT BUỘC viết cách đọc Hiragana trong ngoặc vuông ngay sau chữ Hán tương ứng theo cú pháp: Kanji[Hiragana].
+  Ví dụ:
+  - "私[わたし]" (Tôi)
+  - "行[い]きます" (Đi)
+  - "日本語[にほんご]" (Tiếng Nhật)
+  - "先生[せんせい]" (Thầy/Cô giáo)
+  - "明日[あした]、東京[とうきょう]へ 行[い]きます。"
+
+2. QUY TẮC ÂM ON, ÂM KUN VÀ KATAKANA (CỰC KỲ QUAN TRỌNG):
+- Âm On (Onyomi): BẮT BUỘC viết bằng chữ KATAKANA. Ví dụ: "ジン、ニン", "ニチ、ジツ", "ガク", "セイ".
+- Âm Kun (Kunyomi): BẮT BUỘC viết bằng chữ HIRAGANA. Ví dụ: "ひと", "ひ、-び、-か", "まな.ぶ". Phần okurigana đi kèm viết sau dấu chấm "." hoặc dấu gạch nối "-".
+- BẤT KỲ TỪ HOẶC ÂM NÀO ĐƯỢC VIẾT BẰNG KATAKANA (từ ngoại lai gairaigo, tên riêng quốc tế, âm On): BẮT BUỘC GIỮ NGUYÊN KATAKANA, TUYỆT ĐỐI KHÔNG TỰ Ý CHUYỂN THÀNH HIRAGANA.
+  Ví dụ:
+  - "アメリカ" (America) -> reading: "アメリカ" (KHÔNG được đổi thành "あめりか")
+  - "コーヒー" (Cà phê) -> reading: "コーヒー"
+  - "ベトナム人[じん]" -> reading: "ベトナムじん" (phần Katakana giữ nguyên Katakana, phần Kanji dùng Hiragana)
+  - "パン" (Bánh mì) -> reading: "パン"
+  - "テレビ" (Tivi) -> reading: "テレビ"
+- Trong mục "kanji", trường "character" chỉ chứa ĐÚNG 1 KÝ TỰ CHỮ HÁN ĐƠN LẺ (ví dụ: "人", "日", "学"), tuyệt đối không điền cả từ ghép vào trường này.
+
+3. CẤU TRÚC JSON PHẢI LÀ 1 OBJECT HOẶC MẢNG OBJECT VỚI CÁC TRƯỜNG CHUẨN:
 {
   "id": "bai-01",
   "title": "Bài 1 – Giới thiệu bản thân & Chào hỏi",
   "level": "N5",
   "book": "Minna no Nihongo I",
   "order": 1,
-  "readings": [{ "id": "r01", "title": "自己紹介", "japanese": "私[わたし]は学生[がくせい]です。", "translation": "Tôi là học sinh." }],
+  "readings": [
+    {
+      "id": "r01",
+      "title": "自己紹介[じこしょうかい]",
+      "japanese": "初[はじ]めまして。私[わたし]はマイク・ミラーです。アメリカから 来[き]ました。どうぞ よろしく お願[ねが]いします。",
+      "translation": "Rất vui được làm quen. Tôi là Mike Miller. Tôi đến từ Mỹ. Rất mong nhận được sự giúp đỡ."
+    }
+  ],
   "vocabulary": [
     {
       "id": "v01",
@@ -989,6 +1188,14 @@ QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN FURIGANA:
     },
     {
       "id": "v02",
+      "japanese": "アメリカ",
+      "reading": "アメリカ",
+      "meaning": "Nước Mỹ, Hoa Kỳ",
+      "example": "ミラーさんはアメリカ人[じん]です。",
+      "exampleMeaning": "Anh Miller là người Mỹ."
+    },
+    {
+      "id": "v03",
       "japanese": "先生[せんせい]",
       "reading": "せんせい",
       "meaning": "Thầy, cô giáo",
@@ -1023,6 +1230,11 @@ QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN FURIGANA:
           "word": "日本人[にほんじん]",
           "reading": "にほんじん",
           "meaning": "Người Nhật"
+        },
+        {
+          "word": "アメリカ人[じん]",
+          "reading": "アメリカじん",
+          "meaning": "Người Mỹ"
         }
       ]
     }
@@ -1032,6 +1244,7 @@ QUY TẮC BẮT BUỘC ĐỂ ỨNG DỤNG HIỂN THỊ CHUẨN FURIGANA:
 LƯU Ý QUAN TRỌNG:
 - Chỉ trả về duy nhất một khối mã JSON hợp lệ (không kèm lời chào hay giải thích mở đầu/kết thúc).
 - "id" bài học phải là duy nhất (ví dụ: bai-01, bai-02, n4-bai-05...).
+- Mỗi trường id bên trong (v01, g01, k01, r01) phải duy nhất trong bài.
 
 Dưới đây là nội dung/hình ảnh bài học cần chuyển đổi:
 [DÁN NỘI DUNG HOẶC TẢI ẢNH GIÁO TRÌNH VÀO ĐÂY]`;
@@ -1039,7 +1252,8 @@ Dưới đây là nội dung/hình ảnh bài học cần chuyển đổi:
 const STANDARD_LESSON_TEMPLATE = {
   "_huong_dan_cho_nguoi_dung_va_ai": {
     "muc_dich": "Mẫu bài học chuẩn cho ứng dụng Nihongo Study. Dùng để nạp bài học hoặc gửi cho AI (ChatGPT/Claude/Gemini) làm mẫu cấu trúc.",
-    "quy_tac_furigana": "Viết [cách đọc Hiragana] ngay sau chữ Hán: Kanji[Hiragana], ví dụ: 私[わたし], 行[い]きます, 日本語[にほんご]."
+    "quy_tac_furigana": "Viết [cách đọc Hiragana] ngay sau chữ Hán: Kanji[Hiragana], ví dụ: 私[わたし], 行[い]きます, 日本語[にほんご].",
+    "quy_tac_on_kun_katakana": "Âm On viết bằng Katakana (ジン、ニン), Âm Kun viết bằng Hiragana (ひと). Mọi từ Katakana gốc (từ ngoại lai gairaigo) giữ nguyên Katakana, không đổi sang Hiragana."
   },
   "id": "bai-01",
   "title": "Bài 1 – Giới thiệu bản thân & Chào hỏi",
@@ -1644,10 +1858,14 @@ async function loadCurrentKanjiStrokes() {
   state.kanjiWrite.loadingStrokes = true;
   try {
     const strokeData = await getKanjiStrokes(char);
-    state.kanjiWrite.loadedSvg = strokeData.svgContent || null;
+    state.kanjiWrite.loadedSvg = strokeData?.svgContent || null;
+    state.kanjiWrite.strokePaths = strokeData?.strokePaths || [];
+    state.kanjiWrite.totalStrokes = strokeData?.strokeCount || strokeData?.length || 0;
   } catch (err) {
     console.error('Không tải được mẫu nét:', err);
     state.kanjiWrite.loadedSvg = null;
+    state.kanjiWrite.strokePaths = [];
+    state.kanjiWrite.totalStrokes = 0;
   } finally {
     state.kanjiWrite.loadingStrokes = false;
     renderView();
@@ -1751,9 +1969,24 @@ function renderView() {
 }
 
 function nextCard(delta) {
-  const count = studyCards().length;
+  const cards = studyCards();
+  const count = cards.length;
   if (!count) return;
-  state.flash.index = (state.flash.index + delta + count) % count;
+
+  const target = state.flash.index + delta;
+  if (target < 0) {
+    // Không cho quay ngược trước từ đầu tiên
+    return;
+  }
+  if (target >= count) {
+    // Đã đến từ cuối cùng và bấm tiếp tục -> kết thúc bài học
+    state.flash.isCompleted = true;
+    state.flash.flipped = false;
+    renderView();
+    return;
+  }
+
+  state.flash.index = target;
   state.flash.flipped = false;
   renderView();
 }
@@ -1792,9 +2025,22 @@ async function markCard(rating) {
   state.progress.set(progressKey, record);
   state.progress.set(card.key, record);
 
-  const nextLength = studyCards().length;
-  state.flash.index = nextLength ? (nextLength === cards.length ? (state.flash.index + 1) % nextLength : Math.min(state.flash.index, nextLength - 1)) : 0;
-  state.flash.flipped = false;
+  const isLastCard = state.flash.index >= cards.length - 1;
+  const nextCards = studyCards();
+
+  if (isLastCard || nextCards.length === 0) {
+    state.flash.isCompleted = true;
+    state.flash.index = 0;
+    state.flash.flipped = false;
+  } else {
+    if (nextCards.length < cards.length) {
+      state.flash.index = Math.min(state.flash.index, nextCards.length - 1);
+    } else {
+      state.flash.index = state.flash.index + 1;
+    }
+    state.flash.flipped = false;
+  }
+
   renderMetrics();
   renderView();
 }
@@ -1909,8 +2155,49 @@ function fallbackCopyPrompt() {
 }
 
 async function handleAction(button) {
-  if (button.dataset.tab) { switchTab(button.dataset.tab); return; }
+  if (button.dataset.tab) {
+    switchTab(button.dataset.tab);
+    if (button.classList.contains('metric')) {
+      const workArea = document.querySelector('.work-area');
+      if (workArea) {
+        workArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+    return;
+  }
   const action = button.dataset.action;
+
+  // --- FLASHCARD ACTIONS ---
+  if (action === 'restart-flash') {
+    state.flash.isCompleted = false;
+    state.flash.index = 0;
+    state.flash.flipped = false;
+    renderView();
+    return;
+  }
+  if (action === 'practice-unlearned') {
+    state.flash.mode = 'unknown';
+    state.flash.isCompleted = false;
+    state.flash.index = 0;
+    state.flash.flipped = false;
+    renderView();
+    return;
+  }
+  if (action === 'complete-flash') {
+    state.flash.isCompleted = true;
+    state.flash.flipped = false;
+    renderView();
+    return;
+  }
+  if (action === 'start-quiz-from-lesson') {
+    state.tab = 'quiz';
+    state.quiz.scope = 'current';
+    state.quiz.contentType = 'all';
+    state.quiz.mode = 'all_mix';
+    state.quiz.session = null;
+    renderView();
+    return;
+  }
 
   // --- KANJI ACTIONS ---
   if (action === 'switch-kanji-subtab') {
@@ -1931,6 +2218,9 @@ async function handleAction(button) {
     state.kanjiWrite.strokes = [];
     state.kanjiWrite.lastResult = null;
     state.kanjiWrite.overrideResult = null;
+    state.kanjiWrite.showHint = false;
+    state.kanjiWrite.hintStrokeCount = 0;
+    state.kanjiWrite.showRef = false;
     loadCurrentKanjiStrokes();
     return;
   }
@@ -1945,13 +2235,28 @@ async function handleAction(button) {
     state.kanjiWrite.currentStroke = [];
     state.kanjiWrite.lastResult = null;
     state.kanjiWrite.overrideResult = null;
+    state.kanjiWrite.showHint = false;
+    state.kanjiWrite.hintStrokeCount = 0;
+    state.kanjiWrite.showRef = false;
+    renderView();
     initKanjiCanvas();
+    return;
+  }
+  if (action === 'toggle-kanji-peek') {
+    state.kanjiWrite.showRef = !state.kanjiWrite.showRef;
     renderView();
     initKanjiCanvas();
     return;
   }
   if (action === 'toggle-kanji-hint') {
-    state.kanjiWrite.showHint = !state.kanjiWrite.showHint;
+    const total = state.kanjiWrite.totalStrokes || state.kanjiWrite.strokePaths?.length || 0;
+    if (total > 0) {
+      state.kanjiWrite.hintStrokeCount = (state.kanjiWrite.hintStrokeCount + 1) % (total + 1);
+      state.kanjiWrite.showHint = state.kanjiWrite.hintStrokeCount > 0;
+    } else {
+      state.kanjiWrite.showHint = !state.kanjiWrite.showHint;
+      state.kanjiWrite.hintStrokeCount = state.kanjiWrite.showHint ? 1 : 0;
+    }
     renderView();
     initKanjiCanvas();
     return;
@@ -1962,6 +2267,9 @@ async function handleAction(button) {
       state.kanjiWrite.strokes = [];
       state.kanjiWrite.lastResult = null;
       state.kanjiWrite.overrideResult = null;
+      state.kanjiWrite.showHint = false;
+      state.kanjiWrite.hintStrokeCount = 0;
+      state.kanjiWrite.showRef = false;
       loadCurrentKanjiStrokes();
     }
     return;
@@ -1973,6 +2281,9 @@ async function handleAction(button) {
       state.kanjiWrite.strokes = [];
       state.kanjiWrite.lastResult = null;
       state.kanjiWrite.overrideResult = null;
+      state.kanjiWrite.showHint = false;
+      state.kanjiWrite.hintStrokeCount = 0;
+      state.kanjiWrite.showRef = false;
       loadCurrentKanjiStrokes();
     }
     return;
@@ -1985,12 +2296,11 @@ async function handleAction(button) {
     
     try {
       const strokeData = await getKanjiStrokes(char);
-      const evalResult = evaluateKanjiDrawing(state.kanjiWrite.strokes, strokeData.strokes, {
-        mode: state.kanjiWrite.mode,
-        threshold: 80
-      });
+      const refStrokes = strokeData?.strokes || strokeData;
+      const evalResult = evaluateKanjiDrawing(state.kanjiWrite.strokes, refStrokes, 300, state.kanjiWrite.mode);
       state.kanjiWrite.lastResult = evalResult;
       state.kanjiWrite.overrideResult = null;
+      state.kanjiWrite.showRef = true;
 
       // Lưu tiến độ vào MongoDB
       const username = state.currentUser?.username || 'default';
@@ -1999,8 +2309,8 @@ async function handleAction(button) {
         cardKey: `${currentKanji.lessonId || state.lessonId}:kanji:${currentKanji.id}`,
         username,
         activity: 'kanji_write',
-        score: evalResult.score,
-        passed: evalResult.passed,
+        score: evalResult.score || 0,
+        passed: evalResult.passed || false,
         mode: state.kanjiWrite.mode,
         reviews: 1,
         updatedAt: Date.now()
@@ -2042,26 +2352,52 @@ async function handleAction(button) {
   }
 
   // --- QUIZ ACTIONS ---
+  if (action === 'set-quiz-limit') {
+    const val = Number(button.dataset.limit);
+    if (!isNaN(val)) {
+      state.quiz.limit = val;
+      renderView();
+    }
+    return;
+  }
   if (action === 'start-quiz-session') {
     const contentType = $('quizContentTypeSelect')?.value || state.quiz.contentType || 'all';
     const mode = $('quizModeSelect')?.value || state.quiz.mode || 'all_mix';
-    const scope = $('quizScopeSelect')?.value || state.quiz.scope || 'current';
-    const limit = $('quizLimitSelect')?.value || state.quiz.limit || 10;
+    const selectedLessonId = $('quizLessonSelect')?.value || $('quizScopeSelect')?.value || state.quiz.selectedLessonId || 'all';
     const reviewCheckbox = $('quizReviewOnlyCheckbox');
     const onlyReview = reviewCheckbox && !reviewCheckbox.disabled ? Boolean(reviewCheckbox.checked) : false;
 
+    // Tính toán số câu tối đa có trong phạm vi đã chọn
+    const targetLessons = selectedLessonId === 'all'
+      ? state.lessons
+      : state.lessons.filter(l => l.id === selectedLessonId);
+
+    let availablePool = 0;
+    for (const l of targetLessons) {
+      if (contentType === 'all' || contentType === 'vocabulary') availablePool += (l.vocabulary || []).length;
+      if (contentType === 'all' || contentType === 'grammar') availablePool += (l.grammar || []).length;
+      if (contentType === 'all' || contentType === 'kanji') availablePool += (l.kanji || []).length;
+    }
+
+    let inputVal = parseInt($('quizLimitInput')?.value || state.quiz.limit, 10);
+    if (isNaN(inputVal) || inputVal < 1) inputVal = Math.min(10, availablePool || 10);
+    if (availablePool > 0 && inputVal > availablePool) {
+      inputVal = availablePool;
+    }
+
     state.quiz.contentType = contentType;
     state.quiz.mode = mode;
-    state.quiz.scope = scope;
-    state.quiz.limit = limit === 'all' ? 'all' : Number(limit);
+    state.quiz.selectedLessonId = selectedLessonId;
+    state.quiz.scope = selectedLessonId === 'all' ? 'all' : 'current';
+    state.quiz.limit = inputVal;
     state.quiz.onlyReview = onlyReview;
 
     try {
       const session = buildQuizSession(state.lessons, {
-        lessonId: scope === 'current' ? state.lessonId : 'all',
+        lessonId: selectedLessonId,
         contentType,
         mode,
-        limit: state.quiz.limit,
+        limit: inputVal,
         onlyReview,
         progressMap: state.progress,
         currentUser: state.currentUser
@@ -2077,10 +2413,81 @@ async function handleAction(button) {
       state.quiz.selectedOption = null;
       state.quiz.answered = false;
       state.quiz.history = [];
+      state.quiz.startTime = Date.now();
+      state.quiz.endTime = null;
       renderView();
     } catch (err) {
       notify(err.message);
     }
+    return;
+  }
+  if (action === 'select-quiz-option') {
+    if (state.quiz.answered) return;
+    const optionText = button.dataset.option;
+    const qIndex = state.quiz.currentIndex;
+    const q = state.quiz.session.questions[qIndex];
+    state.quiz.selectedOption = optionText;
+    state.quiz.answered = true;
+
+    const isCorrect = optionText === q.correctAnswer;
+    state.quiz.history.push({
+      questionIndex: qIndex,
+      selected: optionText,
+      correct: q.correctAnswer,
+      isCorrect
+    });
+
+    // Cập nhật trạng thái ôn tập theo máy trạng thái quy tắc (updateReviewStatus)
+    const username = state.currentUser?.username || 'default';
+    const cardKey = `${q.lessonId}:${q.itemType}:${q.itemId}`;
+    const progressKey = `${username}:quiz:${cardKey}`;
+    const oldRecord = state.progress.get(progressKey) || state.progress.get(cardKey);
+
+    const updated = updateReviewStatus(oldRecord, isCorrect);
+    const fullRecord = {
+      ...updated,
+      key: progressKey,
+      cardKey,
+      username,
+      lessonId: q.lessonId,
+      itemId: q.itemId,
+      itemType: q.itemType,
+      activity: 'quiz'
+    };
+
+    cloudSaveProgress(fullRecord).catch(err => console.error('Lỗi lưu tiến độ trắc nghiệm:', err));
+    state.progress.set(progressKey, fullRecord);
+    state.progress.set(cardKey, fullRecord);
+
+    renderView();
+    return;
+  }
+  if (action === 'next-quiz-question') {
+    state.quiz.currentIndex++;
+    state.quiz.selectedOption = null;
+    state.quiz.answered = false;
+    if (state.quiz.currentIndex >= state.quiz.session.questions.length) {
+      state.quiz.endTime = Date.now();
+    }
+    renderView();
+    return;
+  }
+  if (action === 'restart-quiz') {
+    state.quiz.session = null;
+    state.quiz.currentIndex = 0;
+    state.quiz.selectedOption = null;
+    state.quiz.answered = false;
+    state.quiz.history = [];
+    state.quiz.startTime = null;
+    state.quiz.endTime = null;
+    renderView();
+    return;
+  }
+  if (action === 'end-quiz') {
+    state.quiz.session = null;
+    state.quiz.startTime = null;
+    state.quiz.endTime = null;
+    renderView();
     return;
   }
   if (action === 'select-quiz-option') {
@@ -2655,7 +3062,10 @@ function setupListeners() {
 
   $('lessonSelect').addEventListener('change', event => {
     state.lessonId = event.target.value;
+    state.quiz.selectedLessonId = event.target.value;
+    state.quiz.scope = event.target.value === 'all' ? 'all' : 'current';
     state.flash.index = 0;
+    state.flash.isCompleted = false;
     state.flash.flipped = false;
     state.flash.shuffledKeys = null;
     renderView();
@@ -2678,6 +3088,19 @@ function setupListeners() {
         input.setSelectionRange(selectionStart, selectionEnd);
       }
     }
+    if (event.target.id === 'quizLimitInput') {
+      let val = parseInt(event.target.value, 10);
+      const maxVal = parseInt(event.target.max, 10) || 100;
+      if (!isNaN(val)) {
+        if (val > maxVal) {
+          val = maxVal;
+          event.target.value = val;
+        }
+        state.quiz.limit = val;
+        const btn = document.querySelector('[data-action="start-quiz-session"]');
+        if (btn) btn.textContent = `✓ Xác nhận & Bắt đầu làm kiểm tra (${val} câu)`;
+      }
+    }
   });
 
   $('view').addEventListener('click', event => {
@@ -2692,6 +3115,7 @@ function setupListeners() {
     if (event.target.id === 'cardType') {
       state.flash.type = event.target.value;
       state.flash.index = 0;
+      state.flash.isCompleted = false;
       state.flash.flipped = false;
       state.flash.shuffledKeys = null;
       renderView();
@@ -2699,6 +3123,7 @@ function setupListeners() {
     if (event.target.id === 'cardMode') {
       state.flash.mode = event.target.value;
       state.flash.index = 0;
+      state.flash.isCompleted = false;
       state.flash.flipped = false;
       renderView();
     }
@@ -2718,12 +3143,31 @@ function setupListeners() {
     if (event.target.id === 'quizModeSelect') {
       state.quiz.mode = event.target.value;
     }
-    if (event.target.id === 'quizScopeSelect') {
-      state.quiz.scope = event.target.value;
+    if (event.target.id === 'quizLessonSelect' || event.target.id === 'quizScopeSelect') {
+      state.quiz.selectedLessonId = event.target.value;
+      state.quiz.scope = event.target.value === 'all' ? 'all' : 'current';
+      if (event.target.value !== 'all') {
+        state.lessonId = event.target.value;
+        const mainSel = $('lessonSelect');
+        if (mainSel) mainSel.value = event.target.value;
+      }
       renderView();
     }
-    if (event.target.id === 'quizLimitSelect') {
-      state.quiz.limit = event.target.value === 'all' ? 'all' : Number(event.target.value);
+    if (event.target.id === 'quizLimitInput') {
+      let val = parseInt(event.target.value, 10);
+      const maxVal = parseInt(event.target.max, 10) || 100;
+      if (!isNaN(val)) {
+        if (val > maxVal) {
+          val = maxVal;
+          event.target.value = val;
+        } else if (val < 1) {
+          val = 1;
+          event.target.value = val;
+        }
+        state.quiz.limit = val;
+        const btn = document.querySelector('[data-action="start-quiz-session"]');
+        if (btn) btn.textContent = `✓ Xác nhận & Bắt đầu làm kiểm tra (${val} câu)`;
+      }
     }
     if (event.target.id === 'quizReviewOnlyCheckbox') {
       state.quiz.onlyReview = event.target.checked;
@@ -2862,6 +3306,11 @@ function setupListeners() {
   document.addEventListener('keydown', event => {
     if (!state.currentUser) return;
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if ((event.key === 'Enter' || event.key === ' ') && document.activeElement?.dataset?.tab) {
+      event.preventDefault();
+      document.activeElement.click();
+      return;
+    }
     if (event.key === '/' && !typing && !['imports', 'users'].includes(state.tab)) {
       event.preventDefault();
       $('searchInput').focus();
@@ -2959,6 +3408,45 @@ async function start() {
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
+}
+
+// ==================== NETLIFY BADGE PURGER ====================
+function purgeNetlifyBadge() {
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('a[href*="netlify.com"], [data-netlify-drawer], #netlify-badge, .netlify-badge, [class*="netlify-badge"], [id*="netlify-badge"]').forEach(el => {
+    let parent = el;
+    while (parent && parent.parentElement && parent.parentElement !== document.body) {
+      parent = parent.parentElement;
+    }
+    if (parent && parent !== document.body) {
+      parent.remove();
+    } else {
+      el.remove();
+    }
+  });
+
+  document.querySelectorAll('div, aside, span').forEach(el => {
+    if (el === document.body || el.classList.contains('mobile-nav') || el.closest('.mobile-nav')) return;
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.position === 'fixed' && (el.textContent.includes('Powered by Netlify') || el.textContent.includes('Netlify'))) {
+        el.remove();
+      }
+    } catch (_) {}
+  });
+}
+
+if (typeof document !== 'undefined') {
+  purgeNetlifyBadge();
+  if (typeof MutationObserver !== 'undefined') {
+    const netlifyWatcher = new MutationObserver(purgeNetlifyBadge);
+    netlifyWatcher.observe(document.documentElement, { childList: true, subtree: true });
+  }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', purgeNetlifyBadge);
+  window.addEventListener('load', purgeNetlifyBadge);
+  setInterval(purgeNetlifyBadge, 1500);
 }
 
 if (typeof document !== 'undefined') start();
