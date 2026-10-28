@@ -49,7 +49,7 @@ async function resolveSrvToDirectUri(srvUri) {
     console.log(`[CF Adapter] Đã phân giải được ${hosts.length} host: ${hosts.join(', ')}`);
 
     // 2. Phân giải TXT record để lấy replicaSet, authSource
-    let txtParams = 'tls=true';
+    let txtParams = 'tls=true&ssl=true';
     try {
       const txtUrl = `https://cloudflare-dns.com/dns-query?name=${host}&type=TXT`;
       const txtRes = await fetch(txtUrl, { headers: { accept: 'application/dns-json' } });
@@ -69,10 +69,11 @@ async function resolveSrvToDirectUri(srvUri) {
 
     // 3. Xây dựng direct URI
     const queryClean = queryPart.replace(/^\?/, '');
+    // Loại bỏ retryWrites nếu có (sẽ thêm lại từ queryClean)
     const directUri = `mongodb://${encodeURIComponent(decodeURIComponent(user))}:${encodeURIComponent(decodeURIComponent(pass))}@${hosts.join(',')}${pathPart}?${txtParams}${queryClean ? '&' + queryClean : ''}`;
     
     const maskedDirect = directUri.replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@');
-    console.log(`[CF Adapter] ✅ Direct URI: ${maskedDirect}`);
+    console.log(`[CF Adapter] ✅ Direct URI (${hosts.length} hosts): ${maskedDirect}`);
     return directUri;
   } catch (err) {
     console.error('[CF Adapter] DoH resolve error:', err.message);
