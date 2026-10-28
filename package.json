@@ -9,7 +9,9 @@
     "dev": "node server.js",
     "build": "node scripts/build-public.js",
     "test": "node --test tests/*.test.js",
-    "test:db": "node tests/live-db-check.js"
+    "test:db": "node tests/live-db-check.js",
+    "migrate": "node scripts/migrate.js",
+    "migrate:dry": "node scripts/migrate.js --dry-run"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

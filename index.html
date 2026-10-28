@@ -21,7 +21,8 @@
       <div class="side-group-label">KHÁM PHÁ</div>
       <nav class="side-nav" id="sideNav">
         <button class="nav-item" data-tab="vocabulary"><span class="nav-icon">単</span> Từ vựng <span class="nav-arrow">›</span></button>
-        <button class="nav-item" data-tab="practice"><span class="nav-icon">▣</span> Luyện tập <span class="nav-arrow">›</span></button>
+        <button class="nav-item" data-tab="practice"><span class="nav-icon">▣</span> Flashcards <span class="nav-arrow">›</span></button>
+        <button class="nav-item" data-tab="quiz"><span class="nav-icon">❓</span> Trắc nghiệm <span class="nav-arrow">›</span></button>
         <button class="nav-item" data-tab="grammar"><span class="nav-icon">文</span> Mẫu câu <span class="nav-arrow">›</span></button>
         <button class="nav-item" data-tab="kanji"><span class="nav-icon">漢</span> Chữ Hán <span class="nav-arrow">›</span></button>
         <button class="nav-item" data-tab="reading"><span class="nav-icon">読</span> Bài đọc <span class="nav-arrow">›</span></button>
@@ -47,6 +48,7 @@
           <div class="user-pill" id="userPill" style="display:none">
             <span class="user-badge-role" id="userBadgeRole">Admin</span>
             <span class="user-name" id="userName">Quản trị viên</span>
+            <button class="btn-change-pwd" id="btnChangePassword" data-action="open-change-pwd" title="Đổi mật khẩu">🔑 Đổi pass</button>
             <button class="btn-logout" id="btnLogout" data-action="logout" title="Đăng xuất khỏi thiết bị">↪ Đăng xuất</button>
           </div>
           <button class="top-import" data-tab="imports" title="Kho bài học & Thêm bài mới">📚 <span>Kho bài học</span></button>
@@ -72,13 +74,16 @@
     </main>
     <nav class="mobile-nav" id="mobileNav" aria-label="Điều hướng trên điện thoại">
       <button data-tab="vocabulary"><span class="mobile-nav-icon">単</span><small>Từ vựng</small></button>
-      <button data-tab="practice"><span class="mobile-nav-icon">▣</span><small>Luyện tập</small></button>
+      <button data-tab="practice"><span class="mobile-nav-icon">▣</span><small>Flashcards</small></button>
+      <button data-tab="quiz"><span class="mobile-nav-icon">❓</span><small>Trắc nghiệm</small></button>
       <button data-tab="grammar"><span class="mobile-nav-icon">文</span><small>Mẫu câu</small></button>
       <button data-tab="kanji"><span class="mobile-nav-icon">漢</span><small>Chữ Hán</small></button>
       <button data-tab="reading"><span class="mobile-nav-icon">読</span><small>Bài đọc</small></button>
       <button data-tab="imports"><span class="mobile-nav-icon">📚</span><small>Bài học</small></button>
     </nav>
   </div>
+
+  <!-- LOGIN OVERLAY -->
   <div id="loginOverlay" class="login-overlay" style="display:none">
     <div class="login-card">
       <div class="login-brand">
@@ -104,6 +109,94 @@
       <p class="login-meta">Liên hệ quản trị viên nếu bạn cần tài khoản hoặc hỗ trợ đăng nhập.</p>
     </div>
   </div>
+
+  <!-- BẮT BUỘC ĐỔI MẬT KHẨU TẠM THỜI OVERLAY -->
+  <div id="forceChangePwdOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🔒 Đặt mật khẩu mới</h3>
+      </div>
+      <p class="modal-desc">Bạn đang sử dụng mật khẩu tạm thời. Để bảo mật tài khoản cá nhân, vui lòng đặt mật khẩu mới trước khi tiếp tục học.</p>
+      <form id="forceChangePwdForm" class="user-form">
+        <label class="user-field">
+          <span>MẬT KHẨU MỚI (TỐI THIỂU 4 KÝ TỰ)</span>
+          <input type="password" id="forceNewPassword" required minlength="4" placeholder="Nhập mật khẩu mới" autocomplete="new-password" />
+        </label>
+        <label class="user-field">
+          <span>XÁC NHẬN MẬT KHẨU MỚI</span>
+          <input type="password" id="forceConfirmPassword" required minlength="4" placeholder="Nhập lại mật khẩu mới" autocomplete="new-password" />
+        </label>
+        <div id="forcePwdError" class="login-error" style="display:none"></div>
+        <button type="submit" class="button-primary" style="margin-top:12px;width:100%">Lưu mật khẩu mới & Tiếp tục</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL ĐỔI MẬT KHẨU TỰ NGUYỆN -->
+  <div id="changePwdOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🔑 Đổi mật khẩu cá nhân</h3>
+        <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
+      </div>
+      <form id="changePwdForm" class="user-form">
+        <label class="user-field">
+          <span>MẬT KHẨU HIỆN TẠI</span>
+          <input type="password" id="currentPassword" required placeholder="Nhập mật khẩu đang dùng" autocomplete="current-password" />
+        </label>
+        <label class="user-field">
+          <span>MẬT KHẨU MỚI</span>
+          <input type="password" id="changeNewPassword" required minlength="4" placeholder="Tối thiểu 4 ký tự" autocomplete="new-password" />
+        </label>
+        <div id="changePwdError" class="login-error" style="display:none"></div>
+        <div class="button-row" style="margin-top:14px">
+          <button type="submit" class="button-primary">Cập nhật mật khẩu</button>
+          <button type="button" class="button-secondary" data-action="close-modals">Hủy bỏ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL BÁO MẬT KHẨU TẠM CHO ADMIN -->
+  <div id="tempPwdAlertOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📋 Mật khẩu tạm thời đã tạo</h3>
+        <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
+      </div>
+      <p class="modal-desc">Mật khẩu tạm thời đã được tạo và tất cả phiên đăng nhập cũ của người dùng này đã bị thu hồi. Hãy sao chép và gửi mật khẩu này cho người dùng (họ sẽ được yêu cầu đổi mật khẩu ngay khi đăng nhập):</p>
+      <div class="temp-pwd-box">
+        <code id="tempPwdDisplay"></code>
+        <button class="button-primary btn-sm" data-action="copy-temp-pwd">Sao chép</button>
+      </div>
+      <div class="button-row" style="margin-top:16px">
+        <button type="button" class="button-secondary" data-action="close-modals" style="width:100%">Đã gửi cho người dùng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CHỈNH SỬA BÀI HỌC VÀ TỪNG MỤC -->
+  <div id="lessonEditorOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3 id="editorModalTitle">✏ Chỉnh sửa bài học</h3>
+        <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
+      </div>
+      <div id="editorModalBody" class="editor-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL XÁC NHẬN XÓA BÀI HỌC (ĐẶC BIỆT KHI ADMIN XÓA BÀI NGƯỜI KHÁC) -->
+  <div id="deleteConfirmOverlay" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 style="color:#ef4444">⚠ Xác nhận xóa bài học</h3>
+        <button type="button" class="btn-close-modal" data-action="close-modals">✕</button>
+      </div>
+      <div id="deleteConfirmBody"></div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="./app.js"></script>
 </body>

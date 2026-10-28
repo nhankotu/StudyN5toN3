@@ -3,16 +3,20 @@ export { normalizeLesson, stripFurigana };
 import {
   checkCloudHealth, isCloudActive, restoreCloudSession, logoutCloud,
   cloudLogin, cloudGetUsers, cloudCreateUser, cloudResetPassword, cloudDeleteUser,
-  cloudGetLessons, cloudSaveLessons, cloudDeleteLesson,
-  cloudGetProgress, cloudSaveProgress,
+  cloudGetLessons, cloudGetLesson, cloudSaveLessons, cloudUpdateLesson, cloudDeleteLesson,
+  cloudGetProgress, cloudSaveProgress, cloudChangePassword,
   initLocalAuth, getImportedLessons, getProgress
 } from './db.js';
+import { evaluateKanjiDrawing, KANJIVG_LICENSE } from './kanji-evaluator.js';
+import { getKanjiStrokes, KANJIVG_ATTRIBUTION } from './kanji-strokes.js';
+import { buildQuizSession, updateReviewStatus, QUIZ_RULES_EXPLANATION } from './quiz.js';
 
 const PAGE = {
   vocabulary: ['Từ vựng', 'VOCABULARY COLLECTION', 'Kho từ vựng', 'Khám phá các từ tiếng Nhật theo từng bài học.'],
   practice: ['Luyện tập', 'FLASHCARD PRACTICE', 'Luyện tập flashcards', 'Lật thẻ, tự kiểm tra và ghi nhớ từ theo nhịp độ của bạn.'],
   grammar: ['Mẫu câu', 'GRAMMAR & PATTERNS', 'Ngữ pháp và mẫu câu', 'Công thức, giải thích và ví dụ đơn giản, dễ nhớ.'],
-  kanji: ['Chữ Hán', 'KANJI COLLECTION', 'Thư viện chữ Hán', 'Học ý nghĩa, âm đọc và các từ ghép Kanji.'],
+  quiz: ['Trắc nghiệm', 'QUIZ & REVIEW', 'Trắc nghiệm & Ôn tập phản xạ', 'Luyện phản xạ với câu hỏi 4 lựa chọn không dựng đáp án giả và quy tắc ôn tập từ sai rõ ràng.'],
+  kanji: ['Chữ Hán', 'KANJI COLLECTION', 'Học & Luyện viết chữ Hán', 'Học ý nghĩa, âm đọc và luyện viết chữ Hán với Canvas 4 ô kẻ & chấm điểm nét KanjiVG (CC BY-SA 3.0).'],
   reading: ['Bài đọc', 'READING PRACTICE', 'Bài đọc tiếng Nhật', 'Đọc, xem bản dịch và nghe phát âm tiếng Nhật.'],
   imports: ['Kho bài học', 'LESSON LIBRARY & IMPORT', 'Kho bài học & Thêm bài mới', 'Tìm kiếm bài cũ để học lại hoặc nạp bài mới từ file JSON / AI.'],
   users: ['Quản lý tài khoản', 'INTERNAL USERS', 'Quản lý người dùng nội bộ', 'Chỉ Quản trị viên mới có quyền tạo thêm và quản lý người dùng.']
@@ -22,14 +26,49 @@ const state = {
   tab: 'vocabulary', lessonId: 'all', query: '',
   staticLessons: [], imported: [], lessons: [], progress: new Map(),
   lessonSearch: '',
-  lessonFilter: 'all', // 'all' (Tất cả bài học) | 'my' (Bài học của tôi)
+  lessonFilter: 'all', // 'all' (Tất cả) | 'my' (Của tôi) | 'others' (Của người khác)
+  lessonOwnerFilter: 'all',
   flash: {
     type: 'vocabulary',
     mode: 'all',
-    direction: 'forward', // 'forward' (Nhật -> Việt) | 'reverse' (Việt -> Nhật)
+    direction: 'forward',
     index: 0,
     flipped: false,
     shuffledKeys: null
+  },
+  kanjiWrite: {
+    subTab: 'library', // 'library' | 'write'
+    mode: 'shape', // 'shape' | 'strict'
+    currentIndex: 0,
+    strokes: [],
+    currentStroke: [],
+    isDrawing: false,
+    showHint: false,
+    lastResult: null,
+    overrideResult: null,
+    loadingStrokes: false,
+    loadedSvg: null
+  },
+  quiz: {
+    session: null,
+    currentIndex: 0,
+    selectedOption: null,
+    answered: false,
+    history: [],
+    mode: 'vocab_ja_vi',
+    scope: 'all',
+    onlyReview: false
+  },
+  editor: {
+    lesson: null,
+    activeTab: 'vocab',
+    duplicateError: null
+  },
+  deleteModal: {
+    lessonId: null,
+    lessonTitle: null,
+    isOtherUser: false,
+    confirmInput: ''
   },
   storageAvailable: true,
   currentUser: null,
@@ -131,7 +170,7 @@ function switchTab(tab) {
   $('sectionEyebrow').textContent = PAGE[tab][1];
   $('sectionTitle').textContent = PAGE[tab][2];
   $('sectionDescription').textContent = PAGE[tab][3];
-  $('searchWrap').style.display = ['practice', 'imports', 'users'].includes(tab) ? 'none' : 'flex';
+  $('searchWrap').style.display = ['practice', 'quiz', 'imports', 'users'].includes(tab) || (tab === 'kanji' && state.kanjiWrite.subTab === 'write') ? 'none' : 'flex';
   $('toolbar').classList.toggle('hidden', ['imports', 'users'].includes(tab));
   document.title = `${PAGE[tab][0]} — Nihongo Study`;
   renderView();
@@ -169,11 +208,142 @@ function renderGrammar() {
   return `<div class="grammar-list">${items.map(v => `<article class="grammar-card"><div class="grammar-head"><div><h3 class="grammar-title">${h(v.title || v.pattern)}</h3><span class="lesson-tag">✦ ${h(v.lessonTitle)}</span></div>${v.pattern ? `<button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(v.examples?.[0]?.japanese || v.pattern))}" title="Nghe mẫu câu">♫</button>` : ''}</div>${v.pattern ? `<div class="grammar-pattern" lang="ja">${renderFurigana(v.pattern)}</div>` : ''}${v.meaning ? `<p class="word-meaning">${h(v.meaning)}</p>` : ''}<div class="grammar-explanation">${h(v.explanation)}</div>${(v.examples || []).map(e => `<div class="grammar-example"><strong lang="ja">${renderFurigana(e.japanese)}</strong>${h(e.meaning)}</div>`).join('')}</article>`).join('')}</div>`;
 }
 
+function getKanjiStudyList() {
+  const items = allCards('kanji');
+  return items;
+}
+
 function renderKanji() {
-  const items = allCards('kanji').filter(v => matchesQuery(v.character, v.meaning, v.onyomi, v.kunyomi, ...(v.examples || []).flatMap(e => [e.word, e.reading, e.meaning])));
-  $('sectionCount').textContent = `${items.length} chữ`;
-  if (!items.length) return empty('Chưa có chữ Hán', 'Hãy đổi bộ lọc hoặc thêm bài học có danh sách kanji.', state.lessons.length === 0);
-  return `<div class="kanji-grid">${items.map(v => `<article class="kanji-card"><span class="kanji-character" lang="ja">${h(v.character)}</span><div class="kanji-meaning">${h(v.meaning)}</div><div class="kanji-readings">On: ${h(v.onyomi || '—')}<br>Kun: ${h(v.kunyomi || '—')}</div><button style="margin-top:9px" class="audio-btn" data-action="speak" data-text="${h(stripFurigana(v.examples?.[0]?.word || v.character))}" title="Phát âm" aria-label="Phát âm chữ Hán">♫</button>${(v.examples || []).length ? `<div class="kanji-words">${v.examples.map(e => `<div><strong lang="ja">${renderFurigana(e.word)}</strong> (${h(e.reading)}) — ${h(e.meaning)}</div>`).join('')}</div>` : ''}<div>${itemTitle(v)}</div></article>`).join('')}</div>`;
+  const isWritingSubTab = state.kanjiWrite.subTab === 'write';
+  const allKanjis = getKanjiStudyList();
+
+  const tabSwitcher = `
+    <div class="kanji-subnav">
+      <button class="kanji-subtab-btn ${!isWritingSubTab ? 'active' : ''}" data-action="switch-kanji-subtab" data-subtab="library">
+        📚 Thư viện chữ Hán (${allKanjis.length})
+      </button>
+      <button class="kanji-subtab-btn ${isWritingSubTab ? 'active' : ''}" data-action="switch-kanji-subtab" data-subtab="write">
+        ✍ Luyện viết nét Kanji
+      </button>
+    </div>
+  `;
+
+  if (!isWritingSubTab) {
+    const items = allKanjis.filter(v => matchesQuery(v.character, v.meaning, v.onyomi, v.kunyomi, ...(v.examples || []).flatMap(e => [e.word, e.reading, e.meaning])));
+    $('sectionCount').textContent = `${items.length} chữ`;
+    if (!items.length) return tabSwitcher + empty('Chưa có chữ Hán', 'Hãy đổi bộ lọc hoặc thêm bài học có danh sách kanji.', state.lessons.length === 0);
+    return tabSwitcher + `<div class="kanji-grid">${items.map((v, idx) => `
+      <article class="kanji-card">
+        <span class="kanji-character" lang="ja">${h(v.character)}</span>
+        <div class="kanji-meaning">${h(v.meaning)}</div>
+        <div class="kanji-readings">On: ${h(v.onyomi || '—')}<br>Kun: ${h(v.kunyomi || '—')}</div>
+        <div class="kanji-card-actions">
+          <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(v.examples?.[0]?.word || v.character))}" title="Phát âm" aria-label="Phát âm chữ Hán">♫</button>
+          <button class="button-primary btn-sm" data-action="start-kanji-write" data-char="${h(v.character)}" title="Luyện viết chữ này">✍ Luyện viết</button>
+        </div>
+        ${(v.examples || []).length ? `<div class="kanji-words">${v.examples.map(e => `<div><strong lang="ja">${renderFurigana(e.word)}</strong> (${h(e.reading)}) — ${h(e.meaning)}</div>`).join('')}</div>` : ''}
+        <div>${itemTitle(v)}</div>
+      </article>
+    `).join('')}</div>`;
+  }
+
+  // Chế độ Luyện viết
+  if (!allKanjis.length) {
+    return tabSwitcher + empty('Chưa có chữ Hán để luyện viết', 'Hãy chọn bài học khác hoặc nhập bài học có mục Kanji.', state.lessons.length === 0);
+  }
+
+  const idx = Math.min(state.kanjiWrite.currentIndex, allKanjis.length - 1);
+  state.kanjiWrite.currentIndex = idx;
+  const currentKanji = allKanjis[idx];
+  const char = currentKanji.character;
+  const isStrict = state.kanjiWrite.mode === 'strict';
+  const lastRes = state.kanjiWrite.lastResult;
+  const manualRes = state.kanjiWrite.overrideResult;
+
+  $('sectionCount').textContent = `Chữ ${idx + 1} / ${allKanjis.length}`;
+
+  return tabSwitcher + `
+    <div class="kanji-practice-layout">
+      <!-- CỘT CANVAS VẼ -->
+      <div class="kanji-canvas-panel">
+        <div class="kanji-write-header">
+          <div class="kanji-info-badge">
+            <span class="badge-char">${h(char)}</span>
+            <div>
+              <strong>${h(currentKanji.meaning)}</strong>
+              <small>On: ${h(currentKanji.onyomi || '—')} · Kun: ${h(currentKanji.kunyomi || '—')}</small>
+            </div>
+          </div>
+          <div class="kanji-mode-toggle">
+            <button class="btn-mode ${!isStrict ? 'active' : ''}" data-action="set-kanji-mode" data-mode="shape" title="Chấm điểm dựa trên hình dạng tổng thể và độ khép nét">Dễ (Hình dạng)</button>
+            <button class="btn-mode ${isStrict ? 'active' : ''}" data-action="set-kanji-mode" data-mode="strict" title="Chấm điểm nghiêm ngặt thứ tự nét và hướng đưa bút">Nghiêm ngặt (Thứ tự nét)</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <div class="canvas-crosshair"></div>
+          <canvas id="kanjiCanvas" width="300" height="300" aria-label="Bảng viết chữ Hán"></canvas>
+          ${state.kanjiWrite.showHint && state.kanjiWrite.loadedSvg ? `
+            <div class="kanji-hint-overlay">${state.kanjiWrite.loadedSvg}</div>
+          ` : ''}
+        </div>
+
+        <div class="kanji-canvas-toolbar">
+          <button class="button-primary" data-action="submit-kanji-draw">✓ Xong &amp; Chấm điểm</button>
+          <button class="button-secondary" data-action="clear-kanji-draw">↺ Viết lại</button>
+          <button class="button-subtle" data-action="toggle-kanji-hint">${state.kanjiWrite.showHint ? 'Ẩn nét mờ' : '👁 Gợi ý nét mờ'}</button>
+          <button class="button-subtle audio-btn" data-action="speak" data-text="${h(stripFurigana(currentKanji.examples?.[0]?.word || char))}" title="Phát âm">♫</button>
+        </div>
+
+        <div class="kanji-nav-bar">
+          <button class="button-subtle btn-sm" data-action="prev-kanji" ${idx <= 0 ? 'disabled' : ''}>‹ Chữ trước</button>
+          <span class="kanji-nav-status">${idx + 1} / ${allKanjis.length} (${h(currentKanji.lessonTitle)})</span>
+          <button class="button-subtle btn-sm" data-action="next-kanji" ${idx >= allKanjis.length - 1 ? 'disabled' : ''}>Chữ tiếp ›</button>
+        </div>
+      </div>
+
+      <!-- CỘT KẾT QUẢ & CHỮ MẪU KANJIVG -->
+      <div class="kanji-feedback-panel">
+        ${lastRes ? `
+          <div class="grade-card ${(manualRes ?? lastRes.passed) ? 'grade-pass' : 'grade-fail'}">
+            <div class="grade-header">
+              <span class="grade-score">${lastRes.score}<small>/100</small></span>
+              <span class="grade-badge">${(manualRes ?? lastRes.passed) ? 'ĐẠT (≥80)' : 'CHƯA ĐẠT (&lt;80)'}</span>
+            </div>
+            <p class="grade-feedback">${h(lastRes.feedback)}</p>
+            ${lastRes.strokeCountMatch === false ? `<p class="stroke-warning">⚠ Số nét đã vẽ: ${lastRes.userStrokeCount} nét (Chữ mẫu chuẩn: ${lastRes.expectedStrokeCount} nét).</p>` : ''}
+
+            <!-- Nút điều chỉnh đánh giá thủ công của người dùng -->
+            <div class="override-box">
+              <small>Thuật toán chấm chưa chính xác theo cảm nhận?</small>
+              <div class="override-btns">
+                <button class="btn-override pass ${manualRes === true ? 'active' : ''}" data-action="override-grade" data-status="pass">Đánh dấu Đạt</button>
+                <button class="btn-override fail ${manualRes === false ? 'active' : ''}" data-action="override-grade" data-status="fail">Đánh dấu Cần luyện lại</button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <div class="grade-placeholder">
+            <span class="empty-symbol" style="width:48px;height:48px;font-size:24px">✍</span>
+            <strong>Hãy dùng chuột, ngón tay hoặc bút viết chữ vào ô bên trái</strong>
+            <p>Nhấn "Xong &amp; Chấm điểm" để thuật toán kiểm tra từng nét theo chuẩn KanjiVG. Chữ mẫu sẽ hiện ra sau khi bạn hoàn thành!</p>
+          </div>
+        `}
+
+        <!-- HIỂN THỊ CHỮ MẪU VÀ BẢN QUYỀN KANJIVG -->
+        <div class="kanjivg-reference-card">
+          <div class="ref-header">
+            <strong>Chữ mẫu &amp; Thứ tự nét (KanjiVG)</strong>
+            <span class="ref-badge">${state.kanjiWrite.loadedSvg ? 'Chuẩn KanjiVG' : 'Tự đối chiếu'}</span>
+          </div>
+          <div class="kanjivg-preview-container" id="kanjivgPreviewBox">
+            ${state.kanjiWrite.loadedSvg ? state.kanjiWrite.loadedSvg : `<div class="sample-char-text">${h(char)}</div>`}
+          </div>
+          <p class="license-attribution">${KANJIVG_ATTRIBUTION}. Giấy phép CC BY-SA 3.0.</p>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderReadings() {
@@ -246,6 +416,141 @@ function toggleReverse() {
   state.flash.flipped = false;
   renderView();
   notify(state.flash.direction === 'reverse' ? '⇄ Đã đổi sang: Mặt trước nghĩa Tiếng Việt' : '⇄ Đã đổi sang: Mặt trước Tiếng Nhật');
+}
+
+
+function renderQuiz() {
+  const accessibleLessons = state.lessons;
+  const currentLessonId = state.lessonId;
+  const session = state.quiz.session;
+
+  if (!session) {
+    // Giao diện cấu hình và bắt đầu Quiz
+    return `
+      <div class="quiz-setup-card">
+        <div class="quiz-setup-header">
+          <div class="quiz-badge">❓ BỘ LUYỆN PHẢN XẠ TRẮC NGHIỆM</div>
+          <h3>Luyện tập trắc nghiệm 4 lựa chọn</h3>
+          <p>Thuật toán tạo câu hỏi 4 lựa chọn phân biệt từ các bài học bạn có quyền xem, hoàn toàn không dựng đáp án giả. Hệ thống tự động ghi nhận các câu sai vào danh sách cần ôn tập.</p>
+        </div>
+
+        <div class="quiz-setup-grid">
+          <div class="quiz-config-field">
+            <label for="quizModeSelect">Dạng câu hỏi</label>
+            <select id="quizModeSelect">
+              <option value="vocab_ja_vi" ${state.quiz.mode === 'vocab_ja_vi' ? 'selected' : ''}>🇯🇵 Từ vựng: Tiếng Nhật ➔ Chọn nghĩa Tiếng Việt</option>
+              <option value="vocab_vi_ja" ${state.quiz.mode === 'vocab_vi_ja' ? 'selected' : ''}>🇻🇳 Từ vựng: Nghĩa Tiếng Việt ➔ Chọn chữ Nhật</option>
+              <option value="kanji_meaning" ${state.quiz.mode === 'kanji_meaning' ? 'selected' : ''}>漢 Chữ Hán: Xem chữ Hán ➔ Chọn ý nghĩa Hán Việt</option>
+              <option value="kanji_reading" ${state.quiz.mode === 'kanji_reading' ? 'selected' : ''}>読 Chữ Hán: Xem chữ Hán ➔ Chọn âm đọc On/Kun</option>
+              <option value="grammar_meaning" ${state.quiz.mode === 'grammar_meaning' ? 'selected' : ''}>文 Ngữ pháp: Xem mẫu câu ➔ Chọn ý nghĩa tiếng Việt</option>
+            </select>
+          </div>
+
+          <div class="quiz-config-field">
+            <label for="quizScopeSelect">Phạm vi câu hỏi</label>
+            <select id="quizScopeSelect">
+              <option value="current" ${state.quiz.scope === 'current' ? 'selected' : ''}>Chỉ trong bài học đang chọn (${state.lessonId === 'all' ? 'Tất cả' : (state.lessons.find(l=>l.id===state.lessonId)?.title || state.lessonId)})</option>
+              <option value="all" ${state.quiz.scope === 'all' ? 'selected' : ''}>Toàn bộ các bài học bạn có quyền xem (${state.lessons.length} bài)</option>
+            </select>
+          </div>
+
+          <div class="quiz-config-field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="quizReviewOnlyCheckbox" ${state.quiz.onlyReview ? 'checked' : ''} />
+              <span>Chỉ ôn tập các câu đang trong danh sách <strong>Cần ôn tập</strong> (từng trả lời sai)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="quiz-rules-box">
+          <strong>✦ Quy tắc ôn tập trắc nghiệm:</strong>
+          <p>${QUIZ_RULES_EXPLANATION}</p>
+        </div>
+
+        <button class="button-primary btn-large" data-action="start-quiz-session" style="width:100%;margin-top:20px">
+          ▶ Bắt đầu làm trắc nghiệm
+        </button>
+      </div>
+    `;
+  }
+
+  // Đang trong phiên Quiz
+  const qIndex = state.quiz.currentIndex;
+  const questions = session.questions;
+
+  if (qIndex >= questions.length) {
+    // Đã hoàn thành phiên Quiz
+    const history = state.quiz.history;
+    const correctCount = history.filter(h => h.isCorrect).length;
+    const total = history.length;
+    const percent = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+    return `
+      <div class="quiz-summary-card">
+        <div class="quiz-summary-icon">${percent >= 80 ? '🎉' : '💪'}</div>
+        <h2>Hoàn thành bài trắc nghiệm!</h2>
+        <div class="quiz-score-big">${correctCount} / ${total} <small>(${percent}%)</small></div>
+        <p>${percent >= 80 ? 'Rất tuyệt vời! Bạn đã ghi nhớ rất tốt các mục trong bài học.' : 'Hãy tiếp tục kiên trì! Các câu trả lời chưa đúng đã được lưu vào danh sách Cần ôn tập để bạn luyện lại.'}</p>
+        
+        <div class="quiz-summary-actions">
+          <button class="button-primary" data-action="restart-quiz">↺ Làm lại bài khác</button>
+          <button class="button-secondary" data-action="end-quiz">✕ Thoát ra danh mục</button>
+        </div>
+      </div>
+    `;
+  }
+
+  const q = questions[qIndex];
+  const answered = state.quiz.answered;
+  const selected = state.quiz.selectedOption;
+  $('sectionCount').textContent = `Câu ${qIndex + 1} / ${questions.length}`;
+
+  return `
+    <div class="quiz-active-layout">
+      <div class="quiz-progress-top">
+        <span>CÂU ${qIndex + 1} / ${questions.length}</span>
+        <button class="button-subtle btn-sm" data-action="end-quiz">✕ Dừng trắc nghiệm</button>
+      </div>
+      <div class="study-progress-bar">
+        <div class="study-progress-fill" style="width:${(qIndex / questions.length) * 100}%"></div>
+      </div>
+
+      <div class="quiz-question-box">
+        <span class="quiz-question-type">${h(q.mode.toUpperCase().replace(/_/g, ' '))} · ${h(q.lessonTitle)}</span>
+        <div class="quiz-prompt-text" lang="ja">${renderFurigana(q.prompt)}</div>
+        ${q.promptReading ? `<div class="quiz-prompt-reading" lang="ja">${h(q.promptReading)}</div>` : ''}
+        <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(q.prompt))}" title="Nghe phát âm">♫</button>
+      </div>
+
+      <div class="quiz-options-grid">
+        ${q.options.map((opt, i) => {
+          let btnClass = 'quiz-option-btn';
+          if (answered) {
+            if (opt.isCorrect) btnClass += ' option-correct';
+            else if (selected === opt.text) btnClass += ' option-incorrect';
+          }
+          return `
+            <button class="${btnClass}" data-action="select-quiz-option" data-option="${h(opt.text)}" ${answered ? 'disabled' : ''}>
+              <span class="opt-index">${['A', 'B', 'C', 'D'][i]}</span>
+              <span class="opt-text" lang="ja">${renderFurigana(opt.text)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+
+      ${answered ? `
+        <div class="quiz-feedback-bar ${selected === q.correctAnswer ? 'feedback-correct' : 'feedback-incorrect'}">
+          <div class="feedback-text">
+            <strong>${selected === q.correctAnswer ? '✓ Chính xác!' : '✗ Chưa đúng!'}</strong>
+            <span>Đáp án chuẩn: <strong>${h(q.correctAnswer)}</strong></span>
+          </div>
+          <button class="button-primary" data-action="next-quiz-question">
+            ${qIndex + 1 >= questions.length ? 'Xem kết quả tổng kết ›' : 'Câu tiếp theo ›'}
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
 }
 
 function renderPractice() {
@@ -562,8 +867,23 @@ function renderImports() {
   const currentUsername = state.currentUser?.username || 'admin';
   const isAdmin = state.currentUser?.role === 'admin';
   const myLessons = state.lessons.filter(l => l.createdBy === currentUsername);
-  
-  let displayedLessons = state.lessonFilter === 'my' ? myLessons : state.lessons;
+  const otherLessons = state.lessons.filter(l => l.createdBy !== currentUsername);
+
+  // Lọc theo tab sở hữu
+  let scopedLessons = state.lessons;
+  if (state.lessonFilter === 'my') {
+    scopedLessons = myLessons;
+  } else if (state.lessonFilter === 'others' && isAdmin) {
+    scopedLessons = otherLessons;
+  }
+
+  // Lọc thêm theo dropdown người tải lên nếu Admin chọn tab others
+  if (state.lessonFilter === 'others' && isAdmin && state.lessonOwnerFilter !== 'all') {
+    scopedLessons = scopedLessons.filter(l => l.createdBy === state.lessonOwnerFilter);
+  }
+
+  // Lọc theo từ khóa tìm kiếm
+  let displayedLessons = scopedLessons;
   if (state.lessonSearch.trim()) {
     const q = state.lessonSearch.trim().toLowerCase();
     displayedLessons = displayedLessons.filter(l => 
@@ -579,7 +899,10 @@ function renderImports() {
   const storageText = isCloudActive 
     ? 'cơ sở dữ liệu đám mây <strong>MongoDB Atlas</strong> (Đồng bộ vĩnh viễn trên mọi máy tính và điện thoại)' 
     : '<strong>trình duyệt thiết bị này</strong> (Offline)';
-  
+
+  // Danh sách các creators duy nhất để Admin lọc
+  const otherCreators = [...new Set(otherLessons.map(l => l.createdBy || 'unknown'))];
+
   return `
     <div class="notice">
       ⓘ Dữ liệu bài học được lưu vào ${storageText}. Mỗi khi bạn tải bài học lên, hệ thống sẽ lưu lại ứng với tài khoản của bạn để lần sau vào học lại ngay mà không cần tải lại.
@@ -657,17 +980,31 @@ function renderImports() {
           ${state.lessonSearch ? `<button class="btn-clear-search" data-action="clear-lesson-search" title="Xóa tìm kiếm">✕</button>` : ''}
         </div>
 
-        <!-- BỘ LỌC BÀI HỌC -->
+        <!-- BỘ LỌC BÀI HỌC (TÁCH BIỆT BÀI CỦA TÔI VÀ BÀI NGƯỜI KHÁC VỚI ADMIN) -->
         <div class="lesson-filter-tabs">
           <button class="lesson-filter-btn ${state.lessonFilter==='all'?'active':''}" data-action="filter-lessons" data-filter="all">Tất cả bài học (${state.lessons.length})</button>
           <button class="lesson-filter-btn ${state.lessonFilter==='my'?'active':''}" data-action="filter-lessons" data-filter="my">Bài học của tôi (${myLessons.length})</button>
+          ${isAdmin ? `
+            <button class="lesson-filter-btn ${state.lessonFilter==='others'?'active':''}" data-action="filter-lessons" data-filter="others">Bài của người khác (${otherLessons.length})</button>
+          ` : ''}
         </div>
+
+        ${isAdmin && state.lessonFilter === 'others' && otherCreators.length ? `
+          <div class="lesson-subfilter" style="margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:12px">
+            <span>Lọc theo người tải:</span>
+            <select id="lessonOwnerFilterSelect" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border)">
+              <option value="all">Tất cả người dùng (${otherCreators.length})</option>
+              ${otherCreators.map(u => `<option value="${h(u)}" ${state.lessonOwnerFilter === u ? 'selected' : ''}>@${h(u)}</option>`).join('')}
+            </select>
+          </div>
+        ` : ''}
 
         <!-- DANH SÁCH BÀI HỌC -->
         ${displayedLessons.length ? `
           <div class="lesson-card-list">
             ${displayedLessons.map(l => {
               const isMine = l.createdBy === currentUsername;
+              const canEdit = isMine; // Nghiêm ngặt: Admin không được sửa bài người khác!
               const canDelete = isMine || isAdmin;
               const vocabCount = (l.vocabulary || []).length;
               const grammarCount = (l.grammar || []).length;
@@ -680,7 +1017,7 @@ function renderImports() {
                     <div class="lesson-card-title-group">
                       <span class="lesson-badge-level">${h(l.level || 'N5')}</span>
                       <strong>${h(l.title)}</strong>
-                      ${isMine ? `<span class="lesson-badge-mine">Của bạn</span>` : ''}
+                      ${isMine ? `<span class="lesson-badge-mine">Của bạn</span>` : `<span class="lesson-badge-other">@${h(l.createdBy || 'system')}</span>`}
                     </div>
                     <div class="lesson-card-meta">
                       <span>単 ${vocabCount} từ</span>
@@ -694,9 +1031,10 @@ function renderImports() {
                     <button class="button-primary btn-sm" data-action="learn-lesson" data-id="${h(l.id)}" title="Học từ vựng bài này ngay">▶ Học từ vựng</button>
                     <button class="button-secondary btn-sm" data-action="practice-lesson" data-id="${h(l.id)}" title="Luyện flashcard bài này">▣ Flashcard</button>
                     <button class="button-subtle btn-sm" data-action="grammar-lesson" data-id="${h(l.id)}" title="Xem mẫu câu bài này">文 Mẫu câu</button>
+                    ${canEdit ? `<button class="button-secondary btn-sm" data-action="edit-lesson" data-id="${h(l.id)}" title="Chỉnh sửa bài học &amp; từng mục">✏ Sửa bài</button>` : ''}
                     ${readingCount ? `<button class="button-subtle btn-sm" data-action="reading-lesson" data-id="${h(l.id)}">読 Bài đọc</button>` : ''}
                     <button class="button-subtle btn-sm" data-action="download-lesson" data-id="${h(l.id)}" title="Tải file JSON bài học này">↓ Tải JSON</button>
-                    ${canDelete ? `<button class="button-danger btn-sm" data-action="remove" data-id="${h(l.id)}" title="Xóa bài học khỏi cơ sở dữ liệu">Xóa</button>` : ''}
+                    ${canDelete ? `<button class="button-danger btn-sm" data-action="open-delete-confirm" data-id="${h(l.id)}" title="Xóa bài học khỏi cơ sở dữ liệu">Xóa</button>` : ''}
                   </div>
                 </div>
               `;
@@ -713,6 +1051,303 @@ function renderImports() {
       </section>
     </div>
   `;
+}
+
+// ==================== LESSON EDITOR FUNCTIONS ====================
+function openLessonEditor(lessonId) {
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (!lesson) return;
+  // Deep clone to prevent mutating active state until saved
+  state.editor.lesson = JSON.parse(JSON.stringify(lesson));
+  state.editor.activeTab = 'vocab';
+  state.editor.duplicateError = null;
+  renderLessonEditorModal();
+  $('lessonEditorOverlay').style.display = 'flex';
+}
+
+function renderLessonEditorModal() {
+  const l = state.editor.lesson;
+  if (!l) return;
+  const tab = state.editor.activeTab;
+  $('editorModalTitle').textContent = `✏ Chỉnh sửa bài học: ${l.title}`;
+
+  const bodyEl = $('editorModalBody');
+  bodyEl.innerHTML = `
+    <div class="editor-header-fields">
+      <div class="field-row">
+        <label>
+          <span>TÊN BÀI HỌC</span>
+          <input type="text" id="editLessonTitle" value="${h(l.title)}" />
+        </label>
+        <label style="max-width:120px">
+          <span>CẤP ĐỘ</span>
+          <input type="text" id="editLessonLevel" value="${h(l.level || 'N5')}" />
+        </label>
+        <label>
+          <span>GIÁO TRÌNH</span>
+          <input type="text" id="editLessonBook" value="${h(l.book || '')}" />
+        </label>
+        <label style="max-width:100px">
+          <span>THỨ TỰ</span>
+          <input type="number" id="editLessonOrder" value="${l.order || 1}" />
+        </label>
+      </div>
+    </div>
+
+    ${state.editor.duplicateError ? `<div class="login-error" style="margin-bottom:12px">${h(state.editor.duplicateError)}</div>` : ''}
+
+    <div class="editor-tabs">
+      <button class="editor-tab-btn ${tab === 'vocab' ? 'active' : ''}" data-action="switch-editor-tab" data-tab="vocab">Từ vựng (${(l.vocabulary || []).length})</button>
+      <button class="editor-tab-btn ${tab === 'grammar' ? 'active' : ''}" data-action="switch-editor-tab" data-tab="grammar">Mẫu câu (${(l.grammar || []).length})</button>
+      <button class="editor-tab-btn ${tab === 'kanji' ? 'active' : ''}" data-action="switch-editor-tab" data-tab="kanji">Chữ Hán (${(l.kanji || []).length})</button>
+      <button class="editor-tab-btn ${tab === 'reading' ? 'active' : ''}" data-action="switch-editor-tab" data-tab="reading">Bài đọc (${(l.readings || []).length})</button>
+    </div>
+
+    <div class="editor-items-container">
+      ${tab === 'vocab' ? renderVocabEditor(l.vocabulary || []) : ''}
+      ${tab === 'grammar' ? renderGrammarEditor(l.grammar || []) : ''}
+      ${tab === 'kanji' ? renderKanjiEditor(l.kanji || []) : ''}
+      ${tab === 'reading' ? renderReadingEditor(l.readings || []) : ''}
+    </div>
+
+    <div class="editor-footer-actions">
+      <button class="button-primary" data-action="save-lesson-editor">💾 Lưu thay đổi vào MongoDB</button>
+      <button class="button-secondary" data-action="close-modals">Hủy bỏ</button>
+    </div>
+  `;
+}
+
+function renderVocabEditor(vocabList) {
+  return `
+    <div class="items-list-editor">
+      <div class="items-list-head">
+        <strong>Danh sách từ vựng</strong>
+        <button class="button-primary btn-sm" data-action="add-editor-item" data-type="vocab">＋ Thêm từ mới</button>
+      </div>
+      ${vocabList.map((item, idx) => `
+        <div class="editor-item-row" data-index="${idx}">
+          <div class="item-fields-grid">
+            <input type="text" placeholder="Mã ID (v01, v02...)" value="${h(item.id)}" data-prop="id" class="item-input-id" />
+            <input type="text" placeholder="Tiếng Nhật (私[わたし])" value="${h(item.japanese)}" data-prop="japanese" />
+            <input type="text" placeholder="Phiên âm (わたし)" value="${h(item.reading || '')}" data-prop="reading" />
+            <input type="text" placeholder="Nghĩa tiếng Việt" value="${h(item.meaning || '')}" data-prop="meaning" />
+            <input type="text" placeholder="Câu ví dụ" value="${h(item.example || '')}" data-prop="example" />
+            <input type="text" placeholder="Nghĩa câu ví dụ" value="${h(item.exampleMeaning || '')}" data-prop="exampleMeaning" />
+          </div>
+          <button class="btn-delete-item" data-action="remove-editor-item" data-index="${idx}" title="Xóa từ này">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderGrammarEditor(grammarList) {
+  return `
+    <div class="items-list-editor">
+      <div class="items-list-head">
+        <strong>Danh sách mẫu câu</strong>
+        <button class="button-primary btn-sm" data-action="add-editor-item" data-type="grammar">＋ Thêm mẫu câu</button>
+      </div>
+      ${grammarList.map((item, idx) => `
+        <div class="editor-item-row" data-index="${idx}">
+          <div class="item-fields-grid">
+            <input type="text" placeholder="Mã ID (g01)" value="${h(item.id)}" data-prop="id" class="item-input-id" />
+            <input type="text" placeholder="Tiêu đề mẫu" value="${h(item.title || '')}" data-prop="title" />
+            <input type="text" placeholder="Cấu trúc (N1 は N2 です)" value="${h(item.pattern || '')}" data-prop="pattern" />
+            <input type="text" placeholder="Ý nghĩa tiếng Việt" value="${h(item.meaning || '')}" data-prop="meaning" />
+            <textarea placeholder="Giải thích ngữ pháp..." data-prop="explanation" style="grid-column:span 2;height:60px">${h(item.explanation || '')}</textarea>
+          </div>
+          <button class="btn-delete-item" data-action="remove-editor-item" data-index="${idx}" title="Xóa mẫu câu">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderKanjiEditor(kanjiList) {
+  return `
+    <div class="items-list-editor">
+      <div class="items-list-head">
+        <strong>Danh sách chữ Hán</strong>
+        <button class="button-primary btn-sm" data-action="add-editor-item" data-type="kanji">＋ Thêm chữ Hán</button>
+      </div>
+      ${kanjiList.map((item, idx) => `
+        <div class="editor-item-row" data-index="${idx}">
+          <div class="item-fields-grid">
+            <input type="text" placeholder="Mã ID (k01)" value="${h(item.id)}" data-prop="id" class="item-input-id" />
+            <input type="text" placeholder="Chữ Hán (人, 日...)" value="${h(item.character)}" data-prop="character" style="font-size:18px;font-weight:bold" />
+            <input type="text" placeholder="Ý nghĩa (Nhân - người)" value="${h(item.meaning || '')}" data-prop="meaning" />
+            <input type="text" placeholder="Âm Onyomi (ジン)" value="${h(item.onyomi || '')}" data-prop="onyomi" />
+            <input type="text" placeholder="Âm Kunyomi (ひと)" value="${h(item.kunyomi || '')}" data-prop="kunyomi" />
+          </div>
+          <button class="btn-delete-item" data-action="remove-editor-item" data-index="${idx}" title="Xóa chữ Hán">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderReadingEditor(readingList) {
+  return `
+    <div class="items-list-editor">
+      <div class="items-list-head">
+        <strong>Danh sách bài đọc</strong>
+        <button class="button-primary btn-sm" data-action="add-editor-item" data-type="reading">＋ Thêm bài đọc</button>
+      </div>
+      ${readingList.map((item, idx) => `
+        <div class="editor-item-row" data-index="${idx}">
+          <div class="item-fields-grid" style="grid-template-columns:1fr">
+            <div style="display:flex;gap:8px">
+              <input type="text" placeholder="Mã ID (r01)" value="${h(item.id)}" data-prop="id" class="item-input-id" style="width:100px" />
+              <input type="text" placeholder="Tiêu đề bài đọc" value="${h(item.title || '')}" data-prop="title" style="flex:1" />
+            </div>
+            <textarea placeholder="Nội dung tiếng Nhật..." data-prop="japanese" style="height:80px">${h(item.japanese || '')}</textarea>
+            <textarea placeholder="Bản dịch tiếng Việt..." data-prop="translation" style="height:60px">${h(item.translation || '')}</textarea>
+          </div>
+          <button class="btn-delete-item" data-action="remove-editor-item" data-index="${idx}" title="Xóa bài đọc">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Xử lý xác nhận xóa bài học (Đặc biệt với Admin xóa bài người khác)
+function openDeleteConfirmModal(lessonId) {
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (!lesson) return;
+  const currentUsername = state.currentUser?.username || '';
+  const isOtherUser = lesson.createdBy !== currentUsername;
+
+  state.deleteModal = {
+    lessonId: lesson.id,
+    lessonTitle: lesson.title,
+    isOtherUser,
+    confirmInput: ''
+  };
+
+  const bodyEl = $('deleteConfirmBody');
+  bodyEl.innerHTML = `
+    <div class="delete-warning-box">
+      <p>Bạn đang chuẩn bị xóa bài học: <strong>${h(lesson.title)}</strong> (Mã: <code>${h(lesson.id)}</code>).</p>
+      <p style="color:#d04c6b">⚠ Thao tác này sẽ xóa vĩnh viễn bài học và toàn bộ các bản ghi tiến độ học tập liên quan khỏi cơ sở dữ liệu MongoDB.</p>
+      ${isOtherUser ? `
+        <div class="admin-delete-notice">
+          <strong>LƯU Ý DÀNH CHO QUẢN TRỊ VIÊN:</strong>
+          <p>Bài học này thuộc về người dùng <strong>@${h(lesson.createdBy)}</strong>. Để đảm bảo an toàn tuyệt đối, vui lòng gõ chính xác mã bài <code>${h(lesson.id)}</code> hoặc tên bài vào ô bên dưới để xác nhận:</p>
+          <input type="text" id="deleteConfirmInput" placeholder="Nhập '${h(lesson.id)}' để xác nhận" style="width:100%;height:40px;margin-top:8px" autocomplete="off" />
+        </div>
+      ` : ''}
+      <div class="button-row" style="margin-top:20px;justify-content:flex-end">
+        <button class="button-secondary" data-action="close-modals">Hủy bỏ</button>
+        <button class="button-danger" data-action="confirm-delete-lesson" ${isOtherUser ? 'disabled' : ''} id="btnFinalDelete">
+          Xác nhận xóa vĩnh viễn
+        </button>
+      </div>
+    </div>
+  `;
+
+  $('deleteConfirmOverlay').style.display = 'flex';
+}
+
+
+// ==================== KANJI CANVAS INTERACTION ====================
+function initKanjiCanvas() {
+  const canvas = $('kanjiCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.strokeStyle = '#2d3748';
+  ctx.lineWidth = 9;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  function redrawCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw all completed strokes
+    for (const stroke of state.kanjiWrite.strokes) {
+      if (!stroke.length) continue;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(stroke[i].x, stroke[i].y);
+      }
+      ctx.stroke();
+    }
+    // Draw stroke currently being drawn
+    if (state.kanjiWrite.currentStroke.length > 0) {
+      const s = state.kanjiWrite.currentStroke;
+      ctx.beginPath();
+      ctx.moveTo(s[0].x, s[0].y);
+      for (let i = 1; i < s.length; i++) {
+        ctx.lineTo(s[i].x, s[i].y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function getCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  }
+
+  canvas.onpointerdown = (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    state.kanjiWrite.isDrawing = true;
+    const pt = getCoords(e);
+    state.kanjiWrite.currentStroke = [pt];
+    redrawCanvas();
+  };
+
+  canvas.onpointermove = (e) => {
+    if (!state.kanjiWrite.isDrawing) return;
+    const pt = getCoords(e);
+    state.kanjiWrite.currentStroke.push(pt);
+    redrawCanvas();
+  };
+
+  canvas.onpointerup = (e) => {
+    if (!state.kanjiWrite.isDrawing) return;
+    state.kanjiWrite.isDrawing = false;
+    if (state.kanjiWrite.currentStroke.length > 0) {
+      state.kanjiWrite.strokes.push([...state.kanjiWrite.currentStroke]);
+      state.kanjiWrite.currentStroke = [];
+    }
+    redrawCanvas();
+  };
+
+  canvas.onpointercancel = () => {
+    state.kanjiWrite.isDrawing = false;
+    state.kanjiWrite.currentStroke = [];
+    redrawCanvas();
+  };
+
+  redrawCanvas();
+}
+
+async function loadCurrentKanjiStrokes() {
+  const allKanjis = getKanjiStudyList();
+  if (!allKanjis.length) return;
+  const idx = Math.min(state.kanjiWrite.currentIndex, allKanjis.length - 1);
+  const currentKanji = allKanjis[idx];
+  const char = currentKanji?.character;
+  if (!char) return;
+
+  state.kanjiWrite.loadingStrokes = true;
+  try {
+    const strokeData = await getKanjiStrokes(char);
+    state.kanjiWrite.loadedSvg = strokeData.svgContent || null;
+  } catch (err) {
+    console.error('Không tải được mẫu nét:', err);
+    state.kanjiWrite.loadedSvg = null;
+  } finally {
+    state.kanjiWrite.loadingStrokes = false;
+    renderView();
+    initKanjiCanvas();
+  }
 }
 
 function renderUsers() {
@@ -790,8 +1425,12 @@ function renderView() {
   switch (state.tab) {
     case 'vocabulary': result = renderVocabulary(); break;
     case 'practice': result = renderPractice(); break;
+    case 'quiz': result = renderQuiz(); break;
     case 'grammar': result = renderGrammar(); break;
-    case 'kanji': result = renderKanji(); break;
+    case 'kanji':
+      result = renderKanji();
+      setTimeout(() => { if (state.kanjiWrite.subTab === 'write') initKanjiCanvas(); }, 10);
+      break;
     case 'reading': result = renderReadings(); break;
     case 'imports': result = renderImports(); break;
     case 'users': result = renderUsers(); break;
@@ -915,6 +1554,10 @@ async function importPayload(payload, sourceName='JSON') {
   const currentUsername = state.currentUser?.username || 'admin';
   for (const l of incoming) {
     if (!l.createdBy) l.createdBy = currentUsername;
+    l.sourceId = l.sourceId || l.id;
+    if (!l.id.startsWith(`${currentUsername}:`)) {
+      l.id = `${currentUsername}:${l.id}`;
+    }
   }
   await cloudSaveLessons(incoming, currentUsername);
   await reloadLessons();
@@ -963,6 +1606,357 @@ function fallbackCopyPrompt() {
 async function handleAction(button) {
   if (button.dataset.tab) { switchTab(button.dataset.tab); return; }
   const action = button.dataset.action;
+
+  // --- KANJI ACTIONS ---
+  if (action === 'switch-kanji-subtab') {
+    state.kanjiWrite.subTab = button.dataset.subtab || 'library';
+    if (state.kanjiWrite.subTab === 'write') {
+      loadCurrentKanjiStrokes();
+    } else {
+      renderView();
+    }
+    return;
+  }
+  if (action === 'start-kanji-write') {
+    const char = button.dataset.char;
+    const allKanjis = getKanjiStudyList();
+    const idx = allKanjis.findIndex(k => k.character === char);
+    if (idx !== -1) state.kanjiWrite.currentIndex = idx;
+    state.kanjiWrite.subTab = 'write';
+    state.kanjiWrite.strokes = [];
+    state.kanjiWrite.lastResult = null;
+    state.kanjiWrite.overrideResult = null;
+    loadCurrentKanjiStrokes();
+    return;
+  }
+  if (action === 'set-kanji-mode') {
+    state.kanjiWrite.mode = button.dataset.mode;
+    renderView();
+    initKanjiCanvas();
+    return;
+  }
+  if (action === 'clear-kanji-draw') {
+    state.kanjiWrite.strokes = [];
+    state.kanjiWrite.currentStroke = [];
+    state.kanjiWrite.lastResult = null;
+    state.kanjiWrite.overrideResult = null;
+    initKanjiCanvas();
+    renderView();
+    initKanjiCanvas();
+    return;
+  }
+  if (action === 'toggle-kanji-hint') {
+    state.kanjiWrite.showHint = !state.kanjiWrite.showHint;
+    renderView();
+    initKanjiCanvas();
+    return;
+  }
+  if (action === 'prev-kanji') {
+    if (state.kanjiWrite.currentIndex > 0) {
+      state.kanjiWrite.currentIndex--;
+      state.kanjiWrite.strokes = [];
+      state.kanjiWrite.lastResult = null;
+      state.kanjiWrite.overrideResult = null;
+      loadCurrentKanjiStrokes();
+    }
+    return;
+  }
+  if (action === 'next-kanji') {
+    const allKanjis = getKanjiStudyList();
+    if (state.kanjiWrite.currentIndex < allKanjis.length - 1) {
+      state.kanjiWrite.currentIndex++;
+      state.kanjiWrite.strokes = [];
+      state.kanjiWrite.lastResult = null;
+      state.kanjiWrite.overrideResult = null;
+      loadCurrentKanjiStrokes();
+    }
+    return;
+  }
+  if (action === 'submit-kanji-draw') {
+    const allKanjis = getKanjiStudyList();
+    const currentKanji = allKanjis[state.kanjiWrite.currentIndex];
+    if (!currentKanji) return;
+    const char = currentKanji.character;
+    
+    try {
+      const strokeData = await getKanjiStrokes(char);
+      const evalResult = evaluateKanjiDrawing(state.kanjiWrite.strokes, strokeData.strokes, {
+        mode: state.kanjiWrite.mode,
+        threshold: 80
+      });
+      state.kanjiWrite.lastResult = evalResult;
+      state.kanjiWrite.overrideResult = null;
+
+      // Lưu tiến độ vào MongoDB
+      const username = state.currentUser?.username || 'default';
+      const record = {
+        key: `${username}:kanji_write:${currentKanji.lessonId || state.lessonId}:${currentKanji.id}`,
+        cardKey: `${currentKanji.lessonId || state.lessonId}:kanji:${currentKanji.id}`,
+        username,
+        activity: 'kanji_write',
+        score: evalResult.score,
+        passed: evalResult.passed,
+        mode: state.kanjiWrite.mode,
+        reviews: 1,
+        updatedAt: Date.now()
+      };
+      await cloudSaveProgress(record);
+      notify(evalResult.passed ? `Đạt ${evalResult.score}/100 điểm!` : `Chưa đạt (${evalResult.score}/100 điểm). Hãy thử viết lại!`);
+    } catch (err) {
+      console.error('Lỗi chấm nét chữ Hán:', err);
+      notify('Lỗi chấm điểm: ' + err.message);
+    }
+    renderView();
+    initKanjiCanvas();
+    return;
+  }
+  if (action === 'override-grade') {
+    const status = button.dataset.status === 'pass';
+    state.kanjiWrite.overrideResult = status;
+    const allKanjis = getKanjiStudyList();
+    const currentKanji = allKanjis[state.kanjiWrite.currentIndex];
+    if (currentKanji) {
+      const username = state.currentUser?.username || 'default';
+      const record = {
+        key: `${username}:kanji_write:${currentKanji.lessonId || state.lessonId}:${currentKanji.id}`,
+        cardKey: `${currentKanji.lessonId || state.lessonId}:kanji:${currentKanji.id}`,
+        username,
+        activity: 'kanji_write',
+        score: status ? 85 : 50,
+        passed: status,
+        mode: state.kanjiWrite.mode,
+        manualOverride: true,
+        updatedAt: Date.now()
+      };
+      await cloudSaveProgress(record);
+      notify(status ? 'Đã đánh dấu Đạt cho chữ này.' : 'Đã đánh dấu Cần luyện lại cho chữ này.');
+    }
+    renderView();
+    initKanjiCanvas();
+    return;
+  }
+
+  // --- QUIZ ACTIONS ---
+  if (action === 'start-quiz-session') {
+    const mode = $('quizModeSelect')?.value || state.quiz.mode;
+    const scope = $('quizScopeSelect')?.value || state.quiz.scope;
+    const onlyReview = $('quizReviewOnlyCheckbox')?.checked ?? state.quiz.onlyReview;
+
+    state.quiz.mode = mode;
+    state.quiz.scope = scope;
+    state.quiz.onlyReview = onlyReview;
+
+    try {
+      const session = buildQuizSession(state.lessons, {
+        lessonId: scope === 'current' ? state.lessonId : 'all',
+        mode,
+        limit: 10,
+        onlyReview,
+        progressMap: state.progress
+      });
+      state.quiz.session = session;
+      state.quiz.currentIndex = 0;
+      state.quiz.selectedOption = null;
+      state.quiz.answered = false;
+      state.quiz.history = [];
+      renderView();
+    } catch (err) {
+      notify(err.message);
+    }
+    return;
+  }
+  if (action === 'select-quiz-option') {
+    if (state.quiz.answered) return;
+    const optionText = button.dataset.option;
+    const qIndex = state.quiz.currentIndex;
+    const q = state.quiz.session.questions[qIndex];
+    state.quiz.selectedOption = optionText;
+    state.quiz.answered = true;
+
+    const isCorrect = optionText === q.correctAnswer;
+    state.quiz.history.push({
+      questionIndex: qIndex,
+      selected: optionText,
+      correct: q.correctAnswer,
+      isCorrect
+    });
+
+    // Cập nhật trạng thái ôn tập theo máy trạng thái quy tắc (updateReviewStatus)
+    const username = state.currentUser?.username || 'default';
+    const cardKey = `${q.lessonId}:${q.itemType}:${q.itemId}`;
+    const progressKey = `${username}:quiz:${cardKey}`;
+    const oldRecord = state.progress.get(progressKey) || state.progress.get(cardKey);
+
+    const updated = updateReviewStatus(oldRecord, isCorrect);
+    const fullRecord = {
+      ...updated,
+      key: progressKey,
+      cardKey,
+      username,
+      lessonId: q.lessonId,
+      itemId: q.itemId,
+      itemType: q.itemType,
+      activity: 'quiz'
+    };
+
+    cloudSaveProgress(fullRecord).catch(err => console.error('Lỗi lưu tiến độ trắc nghiệm:', err));
+    state.progress.set(progressKey, fullRecord);
+    state.progress.set(cardKey, fullRecord);
+
+    renderView();
+    return;
+  }
+  if (action === 'next-quiz-question') {
+    state.quiz.currentIndex++;
+    state.quiz.selectedOption = null;
+    state.quiz.answered = false;
+    renderView();
+    return;
+  }
+  if (action === 'restart-quiz') {
+    state.quiz.session = null;
+    state.quiz.currentIndex = 0;
+    state.quiz.selectedOption = null;
+    state.quiz.answered = false;
+    state.quiz.history = [];
+    renderView();
+    return;
+  }
+  if (action === 'end-quiz') {
+    state.quiz.session = null;
+    renderView();
+    return;
+  }
+
+  // --- MODAL & EDITOR ACTIONS ---
+  if (action === 'close-modals') {
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      // Do not close force change password modal if user must change password!
+      if (el.id === 'forceChangePwdOverlay' && state.currentUser?.mustChangePassword) return;
+      el.style.display = 'none';
+    });
+    return;
+  }
+  if (action === 'open-change-pwd') {
+    $('currentPassword').value = '';
+    $('changeNewPassword').value = '';
+    $('changePwdError').style.display = 'none';
+    $('changePwdOverlay').style.display = 'flex';
+    return;
+  }
+  if (action === 'copy-temp-pwd') {
+    const code = $('tempPwdDisplay').textContent;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).then(() => notify('📋 Đã sao chép mật khẩu tạm!'));
+    } else {
+      notify('Mật khẩu tạm: ' + code);
+    }
+    return;
+  }
+  if (action === 'edit-lesson') {
+    openLessonEditor(button.dataset.id);
+    return;
+  }
+  if (action === 'switch-editor-tab') {
+    state.editor.activeTab = button.dataset.tab;
+    renderLessonEditorModal();
+    return;
+  }
+  if (action === 'add-editor-item') {
+    const type = button.dataset.type;
+    const l = state.editor.lesson;
+    if (!l) return;
+    if (type === 'vocab') {
+      l.vocabulary = l.vocabulary || [];
+      const id = 'v' + String(l.vocabulary.length + 1).padStart(2, '0');
+      l.vocabulary.push({ id, japanese: '', reading: '', meaning: '', example: '', exampleMeaning: '' });
+    } else if (type === 'grammar') {
+      l.grammar = l.grammar || [];
+      const id = 'g' + String(l.grammar.length + 1).padStart(2, '0');
+      l.grammar.push({ id, title: '', pattern: '', meaning: '', explanation: '', examples: [] });
+    } else if (type === 'kanji') {
+      l.kanji = l.kanji || [];
+      const id = 'k' + String(l.kanji.length + 1).padStart(2, '0');
+      l.kanji.push({ id, character: '', meaning: '', onyomi: '', kunyomi: '', examples: [] });
+    } else if (type === 'reading') {
+      l.readings = l.readings || [];
+      const id = 'r' + String(l.readings.length + 1).padStart(2, '0');
+      l.readings.push({ id, title: '', japanese: '', translation: '' });
+    }
+    renderLessonEditorModal();
+    return;
+  }
+  if (action === 'remove-editor-item') {
+    const idx = Number(button.dataset.index);
+    const l = state.editor.lesson;
+    const tab = state.editor.activeTab;
+    if (tab === 'vocab') l.vocabulary.splice(idx, 1);
+    else if (tab === 'grammar') l.grammar.splice(idx, 1);
+    else if (tab === 'kanji') l.kanji.splice(idx, 1);
+    else if (tab === 'reading') l.readings.splice(idx, 1);
+    renderLessonEditorModal();
+    return;
+  }
+  if (action === 'save-lesson-editor') {
+    const l = state.editor.lesson;
+    if (!l) return;
+    l.title = $('editLessonTitle').value.trim();
+    l.level = $('editLessonLevel').value.trim();
+    l.book = $('editLessonBook').value.trim();
+    l.order = Number($('editLessonOrder').value) || 1;
+
+    // Validate duplicate item IDs
+    const checkDupes = (arr, name) => {
+      const ids = new Set();
+      for (const item of (arr || [])) {
+        if (!item.id || !item.id.trim()) throw new Error(`Mục trong ${name} chưa có mã ID.`);
+        if (ids.has(item.id.trim())) throw new Error(`Mã ID "${item.id}" bị trùng lặp trong ${name}.`);
+        ids.add(item.id.trim());
+      }
+    };
+
+    try {
+      checkDupes(l.vocabulary, 'Từ vựng');
+      checkDupes(l.grammar, 'Mẫu câu');
+      checkDupes(l.kanji, 'Chữ Hán');
+      checkDupes(l.readings, 'Bài đọc');
+    } catch (err) {
+      state.editor.duplicateError = err.message;
+      renderLessonEditorModal();
+      return;
+    }
+
+    try {
+      await cloudUpdateLesson(l.id, l, state.currentUser?.username || '');
+      await reloadLessons();
+      render();
+      $('lessonEditorOverlay').style.display = 'none';
+      notify('Đã cập nhật bài học thành công!');
+    } catch (err) {
+      state.editor.duplicateError = err.message;
+      renderLessonEditorModal();
+    }
+    return;
+  }
+  if (action === 'open-delete-confirm') {
+    openDeleteConfirmModal(button.dataset.id);
+    return;
+  }
+  if (action === 'confirm-delete-lesson') {
+    const lessonId = state.deleteModal.lessonId;
+    if (!lessonId) return;
+    try {
+      await cloudDeleteLesson(lessonId, state.currentUser?.username || '');
+      await reloadLessons();
+      render();
+      $('deleteConfirmOverlay').style.display = 'none';
+      notify('Đã xóa vĩnh viễn bài học và toàn bộ tiến độ liên quan.');
+    } catch (err) {
+      notify('Không xóa được: ' + err.message);
+    }
+    return;
+  }
+
   if (action === 'speak') { speak(button.dataset.text); return; }
   if (action === 'read-passage') {
     const passage = state.lessons.find(lesson => lesson.id === button.dataset.lessonId)?.readings?.find(item => item.id === button.dataset.readingId);
@@ -1105,13 +2099,27 @@ async function handleAction(button) {
   }
   if (action === 'reset-user-pwd') {
     const targetUsername = button.dataset.username;
+    const useTemp = confirm(`Tạo MẬT KHẨU TẠM THỜI cho @${targetUsername}?\n\nNhấn [OK] để hệ thống tự sinh mật khẩu tạm ngẫu nhiên, thu hồi toàn bộ phiên đăng nhập cũ và bắt buộc người dùng đổi mật khẩu khi đăng nhập.\n\nNhấn [Cancel] nếu muốn tự gõ mật khẩu cố định.`);
+    
+    if (useTemp) {
+      try {
+        const res = await cloudResetPassword(targetUsername, '', true);
+        $('tempPwdDisplay').textContent = res.temporaryPassword;
+        $('tempPwdAlertOverlay').style.display = 'flex';
+        notify(`Đã tạo mật khẩu tạm cho @${targetUsername}.`);
+      } catch (err) {
+        notify('Lỗi tạo mật khẩu tạm: ' + err.message);
+      }
+      return;
+    }
+
     const newPwd = prompt(`Nhập mật khẩu mới cho tài khoản @${targetUsername}:`);
     if (!newPwd || newPwd.trim().length < 4) {
       if (newPwd !== null) notify('Mật khẩu cần có ít nhất 4 ký tự.');
       return;
     }
     try {
-      await cloudResetPassword(targetUsername, newPwd.trim());
+      await cloudResetPassword(targetUsername, newPwd.trim(), false);
       notify(`Đã cập nhật mật khẩu cho @${targetUsername} thành công.`);
     } catch (err) {
       notify('Lỗi đổi mật khẩu: ' + err.message);
@@ -1202,8 +2210,16 @@ async function handleLogin(e) {
     localStorage.setItem('nihongo_session', JSON.stringify({
       username: user.username,
       name: user.name,
-      role: user.role
+      role: user.role,
+      mustChangePassword: user.mustChangePassword
     }));
+
+    if (user.mustChangePassword) {
+      $('forcePwdError').style.display = 'none';
+      $('forceNewPassword').value = '';
+      $('forceConfirmPassword').value = '';
+      $('forceChangePwdOverlay').style.display = 'flex';
+    }
 
     $('loginPassword').value = '';
     updateUserUI();
@@ -1362,6 +2378,84 @@ function setupListeners() {
 
   $('loginForm').addEventListener('submit', handleLogin);
 
+  // Form bắt buộc đổi mật khẩu khi có flag mustChangePassword
+  $('forceChangePwdForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const p1 = $('forceNewPassword').value;
+    const p2 = $('forceConfirmPassword').value;
+    const errEl = $('forcePwdError');
+    if (p1.length < 4) { errEl.textContent = 'Mật khẩu tối thiểu 4 ký tự.'; errEl.style.display = 'block'; return; }
+    if (p1 !== p2) { errEl.textContent = 'Mật khẩu xác nhận không khớp.'; errEl.style.display = 'block'; return; }
+    
+    try {
+      await cloudChangePassword(p1);
+      if (state.currentUser) state.currentUser.mustChangePassword = false;
+      const s = JSON.parse(localStorage.getItem('nihongo_session') || '{}');
+      s.mustChangePassword = false;
+      localStorage.setItem('nihongo_session', JSON.stringify(s));
+      $('forceChangePwdOverlay').style.display = 'none';
+      notify('Đã cập nhật mật khẩu mới thành công! Bạn có thể bắt đầu học.');
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  });
+
+  // Form đổi mật khẩu tự nguyện của người dùng
+  $('changePwdForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const current = $('currentPassword').value;
+    const p1 = $('changeNewPassword').value;
+    const errEl = $('changePwdError');
+    if (p1.length < 4) { errEl.textContent = 'Mật khẩu mới tối thiểu 4 ký tự.'; errEl.style.display = 'block'; return; }
+
+    try {
+      await cloudChangePassword(p1, current);
+      $('changePwdOverlay').style.display = 'none';
+      notify('Đã đổi mật khẩu cá nhân thành công!');
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  });
+
+  // Listener input cho Modal xác nhận xóa của Admin
+  $('deleteConfirmOverlay').addEventListener('input', (e) => {
+    if (e.target.id === 'deleteConfirmInput') {
+      const val = e.target.value.trim();
+      const targetId = state.deleteModal.lessonId;
+      const targetTitle = state.deleteModal.lessonTitle;
+      const btn = $('btnFinalDelete');
+      if (btn) {
+        btn.disabled = !(val === targetId || val === targetTitle);
+      }
+    }
+  });
+
+  // Listener cập nhật trường dữ liệu trong Modal chỉnh sửa bài học
+  $('editorModalBody').addEventListener('input', (e) => {
+    const row = e.target.closest('.editor-item-row');
+    if (!row) return;
+    const idx = Number(row.dataset.index);
+    const prop = e.target.dataset.prop;
+    const tab = state.editor.activeTab;
+    const l = state.editor.lesson;
+    if (!l || !prop) return;
+    if (tab === 'vocab' && l.vocabulary?.[idx]) l.vocabulary[idx][prop] = e.target.value;
+    else if (tab === 'grammar' && l.grammar?.[idx]) l.grammar[idx][prop] = e.target.value;
+    else if (tab === 'kanji' && l.kanji?.[idx]) l.kanji[idx][prop] = e.target.value;
+    else if (tab === 'reading' && l.readings?.[idx]) l.readings[idx][prop] = e.target.value;
+  });
+
+  // Dropdown lọc bài học theo người tải
+  $('view').addEventListener('change', (e) => {
+    if (e.target.id === 'lessonOwnerFilterSelect') {
+      state.lessonOwnerFilter = e.target.value;
+      renderView();
+    }
+  });
+
+
   $('view').addEventListener('dragover', event => {
     const zone = event.target.closest('#uploadZone');
     if (!zone) return;
@@ -1474,6 +2568,12 @@ async function start() {
       const parsed = isCloudActive ? await restoreCloudSession() : null;
       if (!parsed) throw new Error('Phiên đã hết hạn');
       state.currentUser = parsed;
+      if (parsed.mustChangePassword) {
+        $('forcePwdError').style.display = 'none';
+        $('forceNewPassword').value = '';
+        $('forceConfirmPassword').value = '';
+        $('forceChangePwdOverlay').style.display = 'flex';
+      }
       if (isCloudActive) await reloadLessons();
       await reloadUserProgress();
       if (parsed.role === 'admin') await loadUsersList();

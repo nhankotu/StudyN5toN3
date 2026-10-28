@@ -95,7 +95,7 @@ export async function cloudLogin(username, password) {
 }
 
 export async function cloudGetUsers() {
-  if (!isCloudActive) return getUsers();
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB.');
   const res = await apiFetch('/api/auth/users');
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể lấy danh sách người dùng.');
@@ -103,11 +103,7 @@ export async function cloudGetUsers() {
 }
 
 export async function cloudCreateUser(user) {
-  if (!isCloudActive) {
-    user.passwordHash = await hashPassword(user.password);
-    user.createdAt = Date.now();
-    return putUser(user);
-  }
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể tạo tài khoản.');
   const res = await apiFetch('/api/auth/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -118,17 +114,24 @@ export async function cloudCreateUser(user) {
   return data;
 }
 
-export async function cloudResetPassword(username, password) {
-  if (!isCloudActive) {
-    const user = await getUser(username);
-    if (!user) throw new Error('Không tìm thấy tài khoản.');
-    user.passwordHash = await hashPassword(password);
-    return putUser(user);
-  }
+export async function cloudResetPassword(username, password = '', temporary = false) {
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể đặt lại mật khẩu.');
   const res = await apiFetch(`/api/auth/users/${encodeURIComponent(username)}/password`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
+    body: JSON.stringify({ password, temporary })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể đổi mật khẩu.');
+  return data;
+}
+
+export async function cloudChangePassword(newPassword, oldPassword = '') {
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể đổi mật khẩu.');
+  const res = await apiFetch('/api/auth/password', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newPassword, oldPassword })
   });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể đổi mật khẩu.');
@@ -136,7 +139,7 @@ export async function cloudResetPassword(username, password) {
 }
 
 export async function cloudDeleteUser(username) {
-  if (!isCloudActive) return removeUser(username);
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể xóa tài khoản.');
   const res = await apiFetch(`/api/auth/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể xóa tài khoản.');
@@ -144,22 +147,24 @@ export async function cloudDeleteUser(username) {
 }
 
 export async function cloudGetLessons() {
-  if (!isCloudActive) return getImportedLessons();
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể tải bài học.');
   const res = await apiFetch('/api/lessons');
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể tải bài học từ MongoDB.');
   return data.lessons;
 }
 
+export async function cloudGetLesson(id) {
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB.');
+  const res = await apiFetch(`/api/lessons/${encodeURIComponent(id)}`);
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể tải bài học.');
+  return data.lesson;
+}
+
 export async function cloudSaveLessons(lessons, username = 'admin') {
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể lưu bài học.');
   const items = Array.isArray(lessons) ? lessons : (lessons?.lessons || [lessons]);
-  if (!isCloudActive) {
-    for (const l of items) {
-      if (!l.createdBy) l.createdBy = username;
-      await putLesson(l);
-    }
-    return items.length;
-  }
   const res = await apiFetch('/api/lessons', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -170,8 +175,20 @@ export async function cloudSaveLessons(lessons, username = 'admin') {
   return data.count;
 }
 
+export async function cloudUpdateLesson(id, lesson) {
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể cập nhật bài học.');
+  const res = await apiFetch(`/api/lessons/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(lesson)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể cập nhật bài học.');
+  return data;
+}
+
 export async function cloudDeleteLesson(id, username = '') {
-  if (!isCloudActive) return removeLesson(id);
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể xóa bài học.');
   const query = username ? `?username=${encodeURIComponent(username)}` : '';
   const res = await apiFetch(`/api/lessons/${encodeURIComponent(id)}${query}`, { method: 'DELETE' });
   const data = await res.json();
@@ -180,7 +197,7 @@ export async function cloudDeleteLesson(id, username = '') {
 }
 
 export async function cloudGetProgress(username) {
-  if (!isCloudActive) return (await getProgress()).filter(item => item.username === username);
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể tải tiến độ học tập.');
   const res = await apiFetch(`/api/progress?username=${encodeURIComponent(username)}`);
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể tải tiến độ học tập.');
@@ -188,12 +205,12 @@ export async function cloudGetProgress(username) {
 }
 
 export async function cloudSaveProgress(record) {
-  if (!isCloudActive) return putProgress(record);
+  if (!isCloudActive) throw new Error('Chưa kết nối cơ sở dữ liệu MongoDB. Không thể lưu tiến độ học tập.');
   const res = await apiFetch('/api/progress', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record)
-    });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record)
+  });
   const data = await res.json();
   if (!res.ok || !data.ok) throw new Error(data.message || 'Không thể lưu tiến độ học tập.');
 }

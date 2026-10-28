@@ -36,11 +36,21 @@ export function normalizeLesson(raw, fallbackId='') {
     explanation: str(v?.explanation), examples: list(v?.examples).map(e => ({ japanese: str(e?.japanese), meaning: str(e?.meaning) })).filter(e => e.japanese)
   })).filter(v => v.title || v.pattern);
 
-  const kanji = list(raw.kanji).map((v, i) => ({
-    id: str(v?.id, `k${i+1}`), character: str(v?.character), meaning: str(v?.meaning),
-    onyomi: str(v?.onyomi), kunyomi: str(v?.kunyomi),
-    examples: list(v?.examples).map(e => ({ word: str(e?.word), reading: str(e?.reading), meaning: str(e?.meaning) })).filter(e => e.word)
-  })).filter(v => v.character && v.meaning);
+  const sourceId = str(raw.sourceId || id);
+
+  const kanji = list(raw.kanji).map((v, i) => {
+    const char = str(v?.character);
+    const isSingle = /^[\u4e00-\u9faf\u3400-\u4dbf々]$/.test(char);
+    return {
+      id: str(v?.id, `k${i+1}`),
+      character: char,
+      meaning: str(v?.meaning),
+      onyomi: str(v?.onyomi),
+      kunyomi: str(v?.kunyomi),
+      strokeSupport: isSingle,
+      examples: list(v?.examples).map(e => ({ word: str(e?.word), reading: str(e?.reading), meaning: str(e?.meaning) })).filter(e => e.word)
+    };
+  }).filter(v => v.character && v.meaning);
 
   const readings = list(raw.readings).map((v, i) => ({
     id: str(v?.id, `r${i + 1}`), title: str(v?.title, title),
@@ -53,6 +63,7 @@ export function normalizeLesson(raw, fallbackId='') {
   const order = Number(raw.order);
   return { 
     id, 
+    sourceId,
     title, 
     level: str(raw.level, 'N5'), 
     book: str(raw.book), 

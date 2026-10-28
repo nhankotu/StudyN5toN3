@@ -20,7 +20,8 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(crypto.scryptSync(String(password), salt, 64), Buffer.from(hash, 'hex'));
 }
 const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
-const sessionUser = user => ({ username: user.username, name: user.name || user.username, role: user.role });
+const escapeRegex = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const sessionUser = user => ({ username: user.username, name: user.name || user.username, role: user.role, mustChangePassword: !!user.mustChangePassword });
 
 async function connectToDatabase() {
   const uri = process.env.MONGODB_URI;
@@ -44,7 +45,9 @@ async function connectToDatabase() {
   const db = client.db('nihongo_study');
   await db.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await db.collection('progress').createIndex({ username: 1, key: 1 });
-  // Tự động khởi tạo dữ liệu mẫu nếu DB trống
+  await db.collection('lessons').createIndex({ id: 1 }, { unique: true });
+  await db.collection('users').createIndex({ username: 1 }, { unique: true });
+  // Tự động khởi tạo tài khoản quản trị nếu DB trống
   await seedDatabaseIfEmpty(db);
   cachedClient = client;
   cachedDb = db;
@@ -67,32 +70,6 @@ async function seedDatabaseIfEmpty(db) {
         createdAt: new Date()
       });
       console.log('Đã khởi tạo tài khoản quản trị.');
-    }
-
-    const lessonCount = await db.collection('lessons').countDocuments();
-    if (lessonCount === 0) {
-      // Đọc các bài học tĩnh đi kèm để nạp sẵn vào MongoDB
-      const defaultLessonsDir = path.resolve(process.cwd(), 'data', 'lessons');
-      if (fs.existsSync(defaultLessonsDir)) {
-        const files = fs.readdirSync(defaultLessonsDir).filter(f => f.endsWith('.json'));
-        const seedLessons = [];
-        for (const file of files) {
-          try {
-            const content = fs.readFileSync(path.join(defaultLessonsDir, file), 'utf-8');
-            const parsed = JSON.parse(content);
-            const items = Array.isArray(parsed) ? parsed : (parsed.lessons || [parsed]);
-            seedLessons.push(...items);
-          } catch (e) {
-            console.error('Lỗi đọc file seed:', file, e.message);
-          }
-        }
-        if (seedLessons.length) {
-          for (const l of seedLessons) {
-            await db.collection('lessons').updateOne({ id: l.id }, { $set: l }, { upsert: true });
-          }
-          console.log(`Đã nạp ${seedLessons.length} bài học khởi đầu vào MongoDB.`);
-        }
-      }
     }
   } catch (err) {
     console.error('Lỗi khi seed database:', err);
@@ -121,6 +98,8 @@ export async function handler(event, context) {
 
   // Chuẩn hóa đường dẫn API
   let reqPath = event.path || '';
+  const qIdx = reqPath.indexOf('?');
+  if (qIdx !== -1) reqPath = reqPath.slice(0, qIdx);
   reqPath = reqPath.replace(/^\/\.netlify\/functions\/api/, '').replace(/^\/api/, '');
   if (!reqPath.startsWith('/')) reqPath = '/' + reqPath;
 
@@ -178,7 +157,7 @@ export async function handler(event, context) {
       if (!user.passwordHash.startsWith('scrypt$')) await db.collection('users').updateOne({ username, passwordHash: user.passwordHash }, { $set: { passwordHash: hashPassword(password) } });
       const token = crypto.randomBytes(32).toString('hex');
       await db.collection('sessions').insertOne({ tokenHash: tokenHash(token), username, expiresAt: new Date(Date.now() + 7 * 86400000) });
-      return res(200, { ok: true, token, user: sessionUser(user) });
+      return res(200, { ok: true, token, user: sessionUser(user), mustChangePassword: !!user.mustChangePassword });
     }
 
     const authHeader = event.headers?.authorization || event.headers?.Authorization || '';
@@ -191,6 +170,24 @@ export async function handler(event, context) {
       await db.collection('sessions').deleteOne({ tokenHash: tokenHash(match[1]) });
       return res(200, { ok: true });
     }
+
+    // Đổi mật khẩu cá nhân: /auth/password
+    if (reqPath === '/auth/password' && method === 'PUT') {
+      const newPassword = String(body.newPassword || '').trim();
+      if (newPassword.length < 4) return res(400, { ok: false, message: 'Mật khẩu mới tối thiểu 4 ký tự.' });
+      if (!caller.mustChangePassword) {
+        const oldPassword = String(body.oldPassword || '');
+        if (!verifyPassword(oldPassword, caller.passwordHash)) {
+          return res(400, { ok: false, message: 'Mật khẩu cũ không chính xác.' });
+        }
+      }
+      await db.collection('users').updateOne(
+        { username: caller.username },
+        { $set: { passwordHash: hashPassword(newPassword), mustChangePassword: false, updatedAt: new Date() } }
+      );
+      return res(200, { ok: true, message: 'Đổi mật khẩu thành công.' });
+    }
+
     if (reqPath.startsWith('/auth/users') && caller.role !== 'admin') return res(403, { ok: false, message: 'Chỉ quản trị viên có quyền quản lý tài khoản.' });
 
     // 2. QUẢN LÝ TÀI KHOẢN (USER MANAGEMENT)
@@ -222,20 +219,30 @@ export async function handler(event, context) {
       return res(201, { ok: true, message: `Tạo tài khoản @${username} thành công!` });
     }
 
-    // Đổi mật khẩu: /auth/users/:username/password
+    // Đổi/đặt lại mật khẩu: /auth/users/:username/password
     const pwdMatch = reqPath.match(/^\/auth\/users\/([^/]+)\/password$/);
     if (pwdMatch && method === 'PUT') {
       const targetUser = decodeURIComponent(pwdMatch[1]).toLowerCase();
-      const newPassword = String(body.password || '');
+      let newPassword = String(body.password || '').trim();
+      const isTemporary = body.temporary === true || !newPassword;
+      if (isTemporary && !newPassword) {
+        newPassword = 'Tmp-' + crypto.randomBytes(3).toString('hex') + '!';
+      }
       if (newPassword.length < 4) return res(400, { ok: false, message: 'Mật khẩu mới tối thiểu 4 ký tự.' });
 
       const result = await db.collection('users').updateOne(
         { username: targetUser },
-        { $set: { passwordHash: hashPassword(newPassword), updatedAt: new Date() } }
+        { $set: { passwordHash: hashPassword(newPassword), mustChangePassword: isTemporary, updatedAt: new Date() } }
       );
       if (result.matchedCount === 0) return res(404, { ok: false, message: 'Không tìm thấy người dùng.' });
       await db.collection('sessions').deleteMany({ username: targetUser });
-      return res(200, { ok: true, message: `Đã đổi mật khẩu cho @${targetUser}.` });
+      return res(200, {
+        ok: true,
+        temporary: isTemporary,
+        mustChangePassword: isTemporary,
+        temporaryPassword: isTemporary ? newPassword : undefined,
+        message: isTemporary ? `Đã tạo mật khẩu tạm thời cho @${targetUser}.` : `Đã đổi mật khẩu cho @${targetUser}.`
+      });
     }
 
     // Xóa tài khoản: /auth/users/:username
@@ -249,11 +256,26 @@ export async function handler(event, context) {
     }
 
     // 3. BÀI HỌC (LESSONS)
+    // Người dùng thường: chỉ bài của mình. Admin: xem tất cả bài.
     if (reqPath === '/lessons' && method === 'GET') {
-      const lessons = await db.collection('lessons').find({}).sort({ order: 1, createdAt: -1, title: 1 }).toArray();
+      const query = caller.role === 'admin' ? {} : { createdBy: caller.username };
+      const lessons = await db.collection('lessons').find(query).sort({ order: 1, createdAt: -1, title: 1 }).toArray();
       return res(200, { ok: true, lessons });
     }
 
+    const getLessonMatch = reqPath.match(/^\/lessons\/([^/]+)$/);
+    if (getLessonMatch && method === 'GET') {
+      const lessonId = decodeURIComponent(getLessonMatch[1]);
+      const lesson = await db.collection('lessons').findOne({ id: lessonId });
+      if (!lesson) return res(404, { ok: false, message: 'Không tìm thấy bài học.' });
+      if (caller.role !== 'admin' && lesson.createdBy !== caller.username) {
+        return res(403, { ok: false, message: 'Bạn không có quyền truy cập bài học này.' });
+      }
+      return res(200, { ok: true, lesson });
+    }
+
+    // Tạo / import bài học:
+    // Cả người dùng và admin chỉ được sửa bài do chính mình sở hữu.
     if (reqPath === '/lessons' && method === 'POST') {
       const payload = body;
       const creator = caller.username;
@@ -264,10 +286,13 @@ export async function handler(event, context) {
         items = rawItems.map(item => normalizeLesson(item));
         if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('Trùng mã bài học trong cùng lần nhập.');
       } catch (error) { return res(400, { ok: false, message: error.message }); }
-      // Check every lesson before writing any of the batch.
+
+      // Kiểm tra quyền sở hữu cho mọi bài học trước khi ghi
       for (const lesson of items) {
         const existing = await db.collection('lessons').findOne({ id: lesson.id });
-        if (existing && caller.role !== 'admin' && existing.createdBy !== caller.username) return res(403, { ok: false, message: `Bạn không có quyền sửa bài ${lesson.id}.` });
+        if (existing && existing.createdBy !== caller.username) {
+          return res(403, { ok: false, message: `Bạn không có quyền sửa bài ${lesson.id}.` });
+        }
       }
       let count = 0;
       for (const item of items) {
@@ -277,6 +302,7 @@ export async function handler(event, context) {
           { 
             $set: { 
               ...lesson,
+              sourceId: lesson.sourceId || lesson.id,
               updatedAt: new Date() 
             },
             $setOnInsert: {
@@ -291,6 +317,36 @@ export async function handler(event, context) {
       return res(200, { ok: true, count, message: `Đã lưu ${count} bài học vào MongoDB cho @${creator}.` });
     }
 
+    // Sửa trực tiếp bài học & từng mục: /lessons/:id
+    const putLessonMatch = reqPath.match(/^\/lessons\/([^/]+)$/);
+    if (putLessonMatch && method === 'PUT') {
+      const lessonId = decodeURIComponent(putLessonMatch[1]);
+      const existing = await db.collection('lessons').findOne({ id: lessonId });
+      if (!existing) return res(404, { ok: false, message: 'Không tìm thấy bài học.' });
+      if (existing.createdBy !== caller.username) {
+        return res(403, { ok: false, message: 'Bạn chỉ có quyền sửa bài học do chính mình tạo.' });
+      }
+      let normalized;
+      try {
+        normalized = normalizeLesson({ ...body, id: lessonId });
+      } catch (err) {
+        return res(400, { ok: false, message: err.message });
+      }
+      const { _id, createdAt, createdBy, ...updateData } = normalized;
+      await db.collection('lessons').updateOne(
+        { id: lessonId },
+        { 
+          $set: { 
+            ...updateData,
+            sourceId: updateData.sourceId || existing.sourceId || lessonId,
+            updatedAt: new Date() 
+          } 
+        }
+      );
+      return res(200, { ok: true, message: `Đã cập nhật bài học "${updateData.title}".` });
+    }
+
+    // Xóa bài học: /lessons/:id
     const delLessonMatch = reqPath.match(/^\/lessons\/([^/]+)$/);
     if (delLessonMatch && method === 'DELETE') {
       const lessonId = decodeURIComponent(delLessonMatch[1]);
@@ -305,25 +361,78 @@ export async function handler(event, context) {
       }
 
       await db.collection('lessons').deleteOne({ id: lessonId });
+      // Dọn dẹp tiến trình liên quan đến bài học này để tránh rác và gắn nhầm
+      await db.collection('progress').deleteMany({
+        $or: [
+          { lessonId: lessonId },
+          { cardKey: { $regex: `^${escapeRegex(lessonId)}:` } }
+        ]
+      });
       return res(200, { ok: true, message: `Đã xóa bài học ${lessonId}.` });
     }
 
     // 4. TIẾN ĐỘ HỌC TẬP (PROGRESS)
     if (reqPath === '/progress' && method === 'GET') {
       const username = caller.username;
-
       const progress = await db.collection('progress').find({ username }).toArray();
       return res(200, { ok: true, progress });
     }
 
     if (reqPath === '/progress' && method === 'POST') {
-      const rec = body;
-      if (!rec || rec.username !== caller.username || typeof rec.key !== 'string' || typeof rec.cardKey !== 'string' || rec.key !== `${rec.username}:${rec.cardKey}` || !['known', 'learning'].includes(rec.status) || !Number.isFinite(rec.dueAt) || !Number.isFinite(rec.intervalDays) || !Number.isInteger(rec.reviews) || rec.reviews < 1) {
+      const rec = body?.record || body;
+      if (!rec || rec.username !== caller.username || typeof rec.key !== 'string' || typeof rec.cardKey !== 'string') {
         return res(400, { ok: false, message: 'Bản ghi tiến độ không hợp lệ.' });
       }
+
+      // Xác thực quyền xem bài học trước khi ghi tiến trình
+      let lessonId = rec.lessonId;
+      if (!lessonId && typeof rec.cardKey === 'string') {
+        const parts = rec.cardKey.split(':');
+        if (parts.length >= 3) {
+          lessonId = parts.slice(0, parts.length - 2).join(':') || parts[0];
+        } else if (parts.length > 0) {
+          lessonId = parts[0];
+        }
+      }
+      if (lessonId) {
+        const lesson = await db.collection('lessons').findOne({ id: lessonId });
+        if (lesson && caller.role !== 'admin' && lesson.createdBy !== caller.username && lesson.createdBy !== 'admin') {
+          return res(403, { ok: false, message: 'Bạn không có quyền lưu tiến độ cho bài học này.' });
+        }
+      }
+
+      const activity = rec.activity || 'flashcard';
+      const updateDoc = {
+        key: rec.key,
+        username: caller.username,
+        cardKey: rec.cardKey,
+        lessonId: lessonId || undefined,
+        activity,
+        status: ['known', 'learning'].includes(rec.status) ? rec.status : 'known',
+        updatedAt: Date.now()
+      };
+
+      if (activity === 'flashcard') {
+        if (!['known', 'learning'].includes(rec.status) || !Number.isFinite(rec.dueAt) || !Number.isFinite(rec.intervalDays) || !Number.isInteger(rec.reviews) || rec.reviews < 1) {
+          return res(400, { ok: false, message: 'Bản ghi tiến độ flashcard không hợp lệ.' });
+        }
+        updateDoc.dueAt = rec.dueAt;
+        updateDoc.intervalDays = rec.intervalDays;
+        updateDoc.reviews = rec.reviews;
+      } else if (activity === 'quiz') {
+        updateDoc.needsReview = typeof rec.needsReview === 'boolean' ? rec.needsReview : rec.status === 'learning';
+        updateDoc.reviews = Number.isInteger(rec.reviews) ? rec.reviews : 1;
+        if (Number.isFinite(rec.score)) updateDoc.score = rec.score;
+      } else if (activity === 'kanji_write') {
+        updateDoc.score = Number.isFinite(rec.score) ? rec.score : 0;
+        updateDoc.mode = rec.mode || 'shape';
+        updateDoc.passed = typeof rec.passed === 'boolean' ? rec.passed : rec.score >= 80;
+        updateDoc.reviews = Number.isInteger(rec.reviews) ? rec.reviews : 1;
+      }
+
       await db.collection('progress').updateOne(
-        { key: rec.key, username: rec.username },
-        { $set: { key: rec.key, username: rec.username, cardKey: rec.cardKey, status: rec.status, dueAt: rec.dueAt, intervalDays: rec.intervalDays, reviews: rec.reviews, updatedAt: Date.now() } },
+        { key: rec.key, username: caller.username },
+        { $set: updateDoc },
         { upsert: true }
       );
       return res(200, { ok: true });

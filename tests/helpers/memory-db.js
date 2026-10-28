@@ -4,7 +4,17 @@ import { MongoClient } from 'mongodb';
 // Isolated in-memory MongoDB adapter for tests; never used by production.
 export const data = { users: [], lessons: [], sessions: [], progress: [] };
 function matches(doc, query) {
-  return Object.entries(query).every(([key, value]) => value && typeof value === 'object' && '$gt' in value ? doc[key] > value.$gt : doc[key] === value);
+  if (!query || Object.keys(query).length === 0) return true;
+  if (query.$or && Array.isArray(query.$or)) {
+    return query.$or.some(subQuery => matches(doc, subQuery));
+  }
+  return Object.entries(query).every(([key, value]) => {
+    if (value && typeof value === 'object') {
+      if ('$gt' in value) return doc[key] > value.$gt;
+      if ('$regex' in value) return new RegExp(value.$regex).test(String(doc[key] ?? ''));
+    }
+    return doc[key] === value;
+  });
 }
 export const db = { collection(name) {
   const rows = data[name];
