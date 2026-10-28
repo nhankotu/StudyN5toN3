@@ -1,0 +1,576 @@
+{
+  "id": "n5-bai-04",
+  "title": "Bài 4 · ここは どこですか (Chỗ này là chỗ nào?)",
+  "level": "N5",
+  "book": "Minna no Nihongo / N5 cơ bản",
+  "order": 4,
+  "vocabulary": [
+    {
+      "id": "v01",
+      "japanese": "ここ",
+      "reading": "ここ",
+      "meaning": "Chỗ này, đây (gần người nói)",
+      "example": "ここ は きょうしつ です。",
+      "exampleMeaning": "Chỗ này là phòng học."
+    },
+    {
+      "id": "v02",
+      "japanese": "そこ",
+      "reading": "そこ",
+      "meaning": "Chỗ ấy, đó (gần người nghe)",
+      "example": "そこ は ぎんこう です。",
+      "exampleMeaning": "Chỗ ấy là ngân hàng."
+    },
+    {
+      "id": "v03",
+      "japanese": "あそこ",
+      "reading": "あそこ",
+      "meaning": "Chỗ kia, đằng kia (xa cả hai)",
+      "example": "あそこ は びょういん です。",
+      "exampleMeaning": "Chỗ kia là bệnh viện."
+    },
+    {
+      "id": "v04",
+      "japanese": "どこ",
+      "reading": "どこ",
+      "meaning": "Chỗ nào, ở đâu (từ để hỏi)",
+      "example": "トイレ は どこ ですか。",
+      "exampleMeaning": "Nhà vệ sinh ở đâu vậy?"
+    },
+    {
+      "id": "v05",
+      "japanese": "とうきょう",
+      "reading": "とうきょう",
+      "meaning": "Tokyo",
+      "example": "ここ は とうきょう です。",
+      "exampleMeaning": "Đây là Tokyo."
+    },
+    {
+      "id": "v06",
+      "japanese": "おおさか",
+      "reading": "おおさか",
+      "meaning": "Osaka",
+      "example": "おおさか は あそこ です。",
+      "exampleMeaning": "Osaka ở phía kia."
+    },
+    {
+      "id": "v07",
+      "japanese": "ハノイ",
+      "reading": "ハノイ",
+      "meaning": "Hà Nội",
+      "example": "私[わたし] の ふるさと は ハノイ です。",
+      "exampleMeaning": "Quê hương của tôi là Hà Nội."
+    },
+    {
+      "id": "v08",
+      "japanese": "がっこう",
+      "reading": "がっこう",
+      "meaning": "Trường học",
+      "example": "あそこ は がっこう です。",
+      "exampleMeaning": "Đằng kia là trường học."
+    },
+    {
+      "id": "v09",
+      "japanese": "かいしゃ",
+      "reading": "かいしゃ",
+      "meaning": "Công ty",
+      "example": "父[ちち] の かいしゃ は あそこ です。",
+      "exampleMeaning": "Công ty của bố tôi ở đằng kia."
+    },
+    {
+      "id": "v10",
+      "japanese": "きょうしつ",
+      "reading": "きょうしつ",
+      "meaning": "Phòng học, lớp học",
+      "example": "きょうしつ は あそこ です。",
+      "exampleMeaning": "Phòng học ở đằng kia."
+    },
+    {
+      "id": "v11",
+      "japanese": "へや",
+      "reading": "へや",
+      "meaning": "Căn phòng",
+      "example": "私[わたし] の へや は ここ です。",
+      "exampleMeaning": "Phòng của tôi là ở đây."
+    },
+    {
+      "id": "v12",
+      "japanese": "トイレ",
+      "reading": "トイレ",
+      "meaning": "Nhà vệ sinh",
+      "example": "トイレ は どこ ですか。",
+      "exampleMeaning": "Nhà vệ sinh ở chỗ nào?"
+    },
+    {
+      "id": "v13",
+      "japanese": "ホテル",
+      "reading": "ホテル",
+      "meaning": "Khách sạn",
+      "example": "あの ホテル は どこ ですか。",
+      "exampleMeaning": "Khách sạn đó ở đâu vậy?"
+    },
+    {
+      "id": "v14",
+      "japanese": "びょういん",
+      "reading": "びょういん",
+      "meaning": "Bệnh viện",
+      "example": "びょういん は あそこ です。",
+      "exampleMeaning": "Bệnh viện ở đằng kia."
+    },
+    {
+      "id": "v15",
+      "japanese": "ぎんこう",
+      "reading": "ぎんこう",
+      "meaning": "Ngân hàng",
+      "example": "ぎんこう は そこ です。",
+      "exampleMeaning": "Ngân hàng ở chỗ đó."
+    },
+    {
+      "id": "v16",
+      "japanese": "こうえん",
+      "reading": "こうえん",
+      "meaning": "Công viên",
+      "example": "あそこ は きれいな こうえん です。",
+      "exampleMeaning": "Đằng kia là công viên đẹp."
+    },
+    {
+      "id": "v17",
+      "japanese": "こうばん",
+      "reading": "こうばん",
+      "meaning": "Đồn công an, bốt cảnh sát",
+      "example": "こうばん は どこ ですか。",
+      "exampleMeaning": "Đồn công an ở đâu vậy?"
+    },
+    {
+      "id": "v18",
+      "japanese": "ゆうびんきょく",
+      "reading": "ゆうびんきょく",
+      "meaning": "Bưu điện",
+      "example": "ゆうびんきょく は えき の まえ です。",
+      "exampleMeaning": "Bưu điện ở phía trước nhà ga."
+    },
+    {
+      "id": "v19",
+      "japanese": "スーパー",
+      "reading": "スーパー",
+      "meaning": "Siêu thị",
+      "example": "スーパー は あそこ です。",
+      "exampleMeaning": "Siêu thị ở đằng kia."
+    },
+    {
+      "id": "v20",
+      "japanese": "みせ",
+      "reading": "みせ",
+      "meaning": "Cửa hàng, tiệm",
+      "example": "あの みせ は 本屋[ほんや] です。",
+      "exampleMeaning": "Cửa hàng đó là tiệm sách."
+    },
+    {
+      "id": "v21",
+      "japanese": "レストラン",
+      "reading": "レストラン",
+      "meaning": "Nhà hàng",
+      "example": "レストラン は ２かい です。",
+      "exampleMeaning": "Nhà hàng ở tầng 2."
+    },
+    {
+      "id": "v22",
+      "japanese": "うけつけ",
+      "reading": "うけつけ",
+      "meaning": "Lễ tân, bàn thường trực",
+      "example": "うけつけ は ここ です。",
+      "exampleMeaning": "Bàn lễ tân ở chỗ này."
+    },
+    {
+      "id": "v23",
+      "japanese": "入口[いりぐち]",
+      "reading": "いりぐち",
+      "meaning": "Lối vào, cửa vào",
+      "example": "入口[いりぐち] は あちら です。",
+      "exampleMeaning": "Lối vào ở hướng đằng kia."
+    },
+    {
+      "id": "v24",
+      "japanese": "出口[でぐち]",
+      "reading": "でぐち",
+      "meaning": "Lối ra, cửa ra",
+      "example": "出口[でぐち] は どこ ですか。",
+      "exampleMeaning": "Lối ra ở đâu vậy?"
+    },
+    {
+      "id": "v25",
+      "japanese": "ふるさと",
+      "reading": "ふるさと",
+      "meaning": "Quê hương",
+      "example": "私[わたし] の ふるさと は ハノイ です。",
+      "exampleMeaning": "Quê hương của tôi là Hà Nội."
+    },
+    {
+      "id": "v26",
+      "japanese": "えん",
+      "reading": "えん",
+      "meaning": "Yên (đơn vị tiền tệ Nhật Bản)",
+      "example": "えん は 日本[にほん] の おかね です。",
+      "exampleMeaning": "Yên là tiền của Nhật Bản."
+    },
+    {
+      "id": "v27",
+      "japanese": "ドン",
+      "reading": "ドン",
+      "meaning": "Đồng (đơn vị tiền Việt Nam)",
+      "example": "ドン は ベトナム の おかね です。",
+      "exampleMeaning": "Đồng là tiền của Việt Nam."
+    },
+    {
+      "id": "v28",
+      "japanese": "ドル",
+      "reading": "ドル",
+      "meaning": "Đô la (tiền Mỹ)",
+      "example": "ドル は アメリカ の おかね です。",
+      "exampleMeaning": "Đô la là tiền của nước Mỹ."
+    },
+    {
+      "id": "v29",
+      "japanese": "ひゃく",
+      "reading": "ひゃく",
+      "meaning": "100 (Một trăm)",
+      "example": "これ は 百[ひゃく] えん です。",
+      "exampleMeaning": "Cái này giá 100 yên."
+    },
+    {
+      "id": "v30",
+      "japanese": "にひゃく",
+      "reading": "にひゃく",
+      "meaning": "200 (Hai trăm)",
+      "example": "二百[にひゃく] えん です。",
+      "exampleMeaning": "Giá 200 yên."
+    },
+    {
+      "id": "v31",
+      "japanese": "さんびゃく",
+      "reading": "さんびゃく",
+      "meaning": "300 (Ba trăm - âm biến)",
+      "example": "三百[さんびゃく] えん です。",
+      "exampleMeaning": "Giá 300 yên."
+    },
+    {
+      "id": "v32",
+      "japanese": "よんひゃく",
+      "reading": "よんひゃく",
+      "meaning": "400 (Bốn trăm)",
+      "example": "四百[よんひゃく] えん です。",
+      "exampleMeaning": "Giá 400 yên."
+    },
+    {
+      "id": "v33",
+      "japanese": "ごひゃく",
+      "reading": "ごひゃく",
+      "meaning": "500 (Năm trăm)",
+      "example": "五百[ごひゃく] えん です。",
+      "exampleMeaning": "Giá 500 yên."
+    },
+    {
+      "id": "v34",
+      "japanese": "ろっぴゃく",
+      "reading": "ろっぴゃく",
+      "meaning": "600 (Sáu trăm - âm biến)",
+      "example": "六百[ろっぴゃく] えん です。",
+      "exampleMeaning": "Giá 600 yên."
+    },
+    {
+      "id": "v35",
+      "japanese": "ななひゃく",
+      "reading": "ななひゃく",
+      "meaning": "700 (Bảy trăm)",
+      "example": "七百[ななひゃく] えん です。",
+      "exampleMeaning": "Giá 700 yên."
+    },
+    {
+      "id": "v36",
+      "japanese": "はっぴゃく",
+      "reading": "はっぴゃく",
+      "meaning": "800 (Tám trăm - âm biến)",
+      "example": "八百[はっぴゃく] えん です。",
+      "exampleMeaning": "Giá 800 yên."
+    },
+    {
+      "id": "v37",
+      "japanese": "きゅうひゃく",
+      "reading": "きゅうひゃく",
+      "meaning": "900 (Chín trăm)",
+      "example": "九百[きゅうひゃく] えん です。",
+      "exampleMeaning": "Giá 900 yên."
+    },
+    {
+      "id": "v38",
+      "japanese": "せん",
+      "reading": "せん",
+      "meaning": "1.000 (Một nghìn)",
+      "example": "千[せん] えん です。",
+      "exampleMeaning": "Giá 1.000 yên."
+    }
+  ],
+  "grammar": [
+    {
+      "id": "g01",
+      "title": "[A] は [B] です (Xác định vị trí, địa điểm)",
+      "pattern": "[A] は [B] です。",
+      "meaning": "Chỗ này / Chỗ ấy / Chỗ kia là [B].",
+      "explanation": "Dùng để chỉ định hoặc giới thiệu một địa điểm. A là đại từ chỉ phương hướng/vị trí: ここ (chỗ này), そこ (chỗ ấy), あそこ (chỗ kia). B là tên địa danh, đất nước hoặc cơ sở (ベトナム, ハノイ, がっこう, えき...).",
+      "examples": [
+        {
+          "japanese": "ここ は 日本[にほん] です。",
+          "meaning": "Chỗ này là Nhật Bản."
+        },
+        {
+          "japanese": "そこ は ベトナム です。",
+          "meaning": "Chỗ ấy là Việt Nam."
+        },
+        {
+          "japanese": "あそこ は がっこう です。",
+          "meaning": "Chỗ kia là trường học."
+        }
+      ]
+    },
+    {
+      "id": "g02",
+      "title": "[A] は どこ ですか (Hỏi địa điểm / vị trí)",
+      "pattern": "[A] は どこ ですか。",
+      "meaning": "[A] là chỗ nào? / Ở đâu?",
+      "explanation": "Dùng từ nghi vấn どこ (ở đâu, chỗ nào) để hỏi vị trí. A có thể là đại từ chỉ định (ここ, そこ, あそこ) hoặc địa danh, địa điểm cần tìm.",
+      "examples": [
+        {
+          "japanese": "ここ は どこ ですか。",
+          "meaning": "Chỗ này là chỗ nào?"
+        },
+        {
+          "japanese": "あそこ は どこ ですか。",
+          "meaning": "Chỗ kia là chỗ nào?"
+        },
+        {
+          "japanese": "がっこう は どこ ですか。",
+          "meaning": "Trường học là ở đâu?"
+        }
+      ]
+    },
+    {
+      "id": "g03",
+      "title": "[Địa điểm A] は [Vị trí B] です",
+      "pattern": "[Địa điểm A] は [Vị trí B] です。",
+      "meaning": "[Địa điểm A] ở [Vị trí B].",
+      "explanation": "Dùng để nói về vị trí của một căn phòng, tòa nhà hay cơ sở cụ thể. A là địa điểm (きょうしつ, かいしゃ, がっこう, へや, トイレ...); B là đại từ chỉ vị trí (ここ, そこ, あそこ).",
+      "examples": [
+        {
+          "japanese": "きょうしつ は あそこ です。",
+          "meaning": "Phòng học là chỗ kia."
+        },
+        {
+          "japanese": "かいしゃ は そこ です。",
+          "meaning": "Công ty là chỗ ấy."
+        },
+        {
+          "japanese": "トイレ は あそこ です。",
+          "meaning": "Nhà vệ sinh ở đằng kia."
+        }
+      ]
+    },
+    {
+      "id": "g04",
+      "title": "[A] の [B] は [C] です (Đất nước, quê hương của ai)",
+      "pattern": "[A] の [B] は [C] です。",
+      "meaning": "[B] của [A] là [C].",
+      "explanation": "Trợ từ の biểu thị quan hệ sở thuộc. Dùng để nói về đất nước, quốc gia hoặc quê hương của một người (A: 私, かれ, かのじょ, 山田さん...; B: 国, ふるさと; C: ベトナム, 日本, ハノイ...).",
+      "examples": [
+        {
+          "japanese": "私[わたし] の 国[くに] は ベトナム です。",
+          "meaning": "Đất nước của tôi là Việt Nam."
+        },
+        {
+          "japanese": "山田[やまだ]さん の 国[くに] は 日本[にほん] です。",
+          "meaning": "Đất nước của anh Yamada là Nhật Bản."
+        },
+        {
+          "japanese": "私[わたし] の ふるさと は ハノイ です。",
+          "meaning": "Quê hương của tôi là Hà Nội."
+        }
+      ]
+    },
+    {
+      "id": "g05",
+      "title": "[A] は [B] の [C] です (Tiền tệ, sản phẩm của quốc gia)",
+      "pattern": "[A] は [B] の [C] です。",
+      "meaning": "[A] là [C] của [B].",
+      "explanation": "Dùng để giải thích loại tiền tệ hoặc sản phẩm xuất xứ từ một quốc gia, thương hiệu (A: えん, ドン, ホンダ...; B: 日本, ベトナム, アメリカ...; C: おかね, かいしゃ, バイク, 車...).",
+      "examples": [
+        {
+          "japanese": "えん は 日本[にほん] の おかね です。",
+          "meaning": "Yên là tiền của Nhật Bản."
+        },
+        {
+          "japanese": "ドン は ベトナム の おかね です。",
+          "meaning": "Đồng là tiền của Việt Nam."
+        },
+        {
+          "japanese": "ホンダ は 日本[にほん] の バイク です。",
+          "meaning": "Honda là xe máy của Nhật Bản."
+        }
+      ]
+    },
+    {
+      "id": "g06",
+      "title": "[A] は どこ の [B] ですか (Hỏi xuất xứ của sản phẩm, tiền tệ)",
+      "pattern": "[A] は どこ の [B] ですか。",
+      "meaning": "[A] là [B] của nước nào / hãng nào?",
+      "explanation": "Dùng cụm どこ の để hỏi nguồn gốc, xuất xứ của một món đồ hay loại tiền tệ (A: これ, それ, あれ, えん, ホンダ...; B: おかね, 車, バイク, かいしゃ...).",
+      "examples": [
+        {
+          "japanese": "これ は どこ の おかね ですか。",
+          "meaning": "Đây là tiền của nước nào?"
+        },
+        {
+          "japanese": "それ は どこ の 車[くるま] ですか。",
+          "meaning": "Đó là ô tô của nước nào / hãng nào?"
+        },
+        {
+          "japanese": "あれ は どこ の バイク ですか。",
+          "meaning": "Kia là xe máy của hãng nào?"
+        }
+      ]
+    }
+  ],
+  "kanji": [
+    {
+      "id": "k01",
+      "character": "私",
+      "meaning": "Tư (tôi, riêng tư)",
+      "onyomi": "シ",
+      "kunyomi": "わたし、わたくし",
+      "examples": [
+        {
+          "word": "私[わたし]",
+          "reading": "わたし",
+          "meaning": "Tôi"
+        }
+      ]
+    },
+    {
+      "id": "k02",
+      "character": "日",
+      "meaning": "Nhật (mặt trời, ngày, Nhật Bản)",
+      "onyomi": "ニチ、ジツ",
+      "kunyomi": "ひ、か",
+      "examples": [
+        {
+          "word": "日本[にほん]",
+          "reading": "にほん",
+          "meaning": "Nhật Bản"
+        }
+      ]
+    },
+    {
+      "id": "k03",
+      "character": "本",
+      "meaning": "Bản (sách, gốc rễ)",
+      "onyomi": "ホン",
+      "kunyomi": "もと",
+      "examples": [
+        {
+          "word": "本[ほん]",
+          "reading": "ほん",
+          "meaning": "Sách, quyển sách"
+        },
+        {
+          "word": "日本[にほん]",
+          "reading": "にほん",
+          "meaning": "Nhật Bản"
+        },
+        {
+          "word": "日本人[にほんじん]",
+          "reading": "にほんじん",
+          "meaning": "Người Nhật"
+        },
+        {
+          "word": "山本[やまもと]さん",
+          "reading": "やまもとさん",
+          "meaning": "Anh/chị Yamamoto"
+        }
+      ]
+    },
+    {
+      "id": "k04",
+      "character": "国",
+      "meaning": "Quốc (đất nước, quốc gia)",
+      "onyomi": "コク",
+      "kunyomi": "くに",
+      "examples": [
+        {
+          "word": "国[くに]",
+          "reading": "くに",
+          "meaning": "Đất nước, quốc gia"
+        },
+        {
+          "word": "韓国[かんこく]",
+          "reading": "かんこく",
+          "meaning": "Hàn Quốc"
+        },
+        {
+          "word": "中国[ちゅうごく]",
+          "reading": "ちゅうごく",
+          "meaning": "Trung Quốc"
+        }
+      ]
+    },
+    {
+      "id": "k05",
+      "character": "口",
+      "meaning": "Khẩu (miệng, cửa, lối ra vào)",
+      "onyomi": "コウ、ク",
+      "kunyomi": "くち",
+      "examples": [
+        {
+          "word": "口[くち]",
+          "reading": "くち",
+          "meaning": "Cái miệng"
+        },
+        {
+          "word": "入口[いりぐち]",
+          "reading": "いりぐち",
+          "meaning": "Lối vào, cửa vào"
+        },
+        {
+          "word": "出口[でぐち]",
+          "reading": "でぐち",
+          "meaning": "Lối ra, cửa ra"
+        }
+      ]
+    },
+    {
+      "id": "k06",
+      "character": "入",
+      "meaning": "Nhập (vào, đi vào)",
+      "onyomi": "ニュウ",
+      "kunyomi": "はい(る)、い(る)、い(れる)",
+      "examples": [
+        {
+          "word": "入口[いりぐち]",
+          "reading": "いりぐち",
+          "meaning": "Lối vào, cửa vào"
+        }
+      ]
+    },
+    {
+      "id": "k07",
+      "character": "出",
+      "meaning": "Xuất (ra, đi ra)",
+      "onyomi": "シュツ、スイ",
+      "kunyomi": "で(る)、だ(す)",
+      "examples": [
+        {
+          "word": "出口[でぐち]",
+          "reading": "でぐち",
+          "meaning": "Lối ra, cửa ra"
+        }
+      ]
+    }
+  ]
+}

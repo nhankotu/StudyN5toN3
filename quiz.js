@@ -6,9 +6,9 @@
 import { stripFurigana } from './lesson.js';
 
 export const QUIZ_RULES_EXPLANATION = `Quy tắc ôn tập trắc nghiệm:
-1. Khi trả lời sai một câu: Từ/mục đó sẽ được đưa vào danh sách "Cần ôn tập".
-2. Khi ôn tập trong danh sách và trả lời đúng: Mục đó sẽ được hoàn thành và gỡ khỏi danh sách cần ôn (lịch sử vẫn được lưu).
-3. Nếu trả lời sai lần nữa trong tương lai: Mục đó sẽ quay lại danh sách cần ôn.`;
+1. Khi trả lời sai một câu: Mục đó sẽ tự động được đưa vào danh sách "Cần ôn tập".
+2. Khi ôn tập trong danh sách và trả lời đúng: Mục đó sẽ được đánh dấu hoàn thành và gỡ khỏi danh sách cần ôn (lịch sử ôn tập vẫn được bảo lưu).
+3. Nếu trả lời sai lần nữa trong tương lai: Mục đó sẽ tự động quay lại danh sách cần ôn.`;
 
 export function normalizeAnswer(text) {
   if (!text) return '';
@@ -64,53 +64,237 @@ export function generateQuestionChoices(targetItem, candidatePool, getPrompt, ge
     [choices[i], choices[j]] = [choices[j], choices[i]];
   }
 
+  const options = choices.map(text => ({
+    text,
+    isCorrect: text === correctAnswer
+  }));
+
   return {
     success: true,
     prompt: getPrompt(targetItem),
     correctAnswer,
     choices,
+    options,
     targetItem
   };
 }
 
 /**
- * Builds a full quiz session from items.
- * @param {Array<object>} items Accessible study items
- * @param {'vocab_ja_vi'|'vocab_vi_ja'|'kanji_meaning'|'kanji_reading'|'grammar_meaning'} mode
- * @param {boolean} shuffleQuestions Whether to randomize question order
- * @param {Array<object>} distractorPool Optional broader pool of accessible items for distractors
+ * Configuration helper for specific question modes
  */
-export function buildQuizSession(items, mode = 'vocab_ja_vi', shuffleQuestions = true, distractorPool = null) {
-  if (!items || items.length === 0) {
-    return { success: false, message: 'Danh sách mục học trống.', questions: [] };
+function getModeHandlers(mode, vocabPool, grammarPool, kanjiPool) {
+  switch (mode) {
+    case 'vocab_vi_ja':
+      return {
+        modeLabel: 'Từ vựng: Việt ➔ Nhật',
+        pool: vocabPool,
+        getPrompt: item => item.meaning,
+        getAnswer: item => item.ruby || item.japanese,
+        getReading: () => '',
+        speakTarget: 'correctAnswer'
+      };
+    case 'grammar_meaning':
+      return {
+        modeLabel: 'Mẫu câu: Ý nghĩa',
+        pool: grammarPool,
+        getPrompt: item => item.pattern || item.title,
+        getAnswer: item => item.meaning,
+        getReading: () => '',
+        speakTarget: 'prompt'
+      };
+    case 'grammar_vi_ja':
+      return {
+        modeLabel: 'Mẫu câu: Nghĩa ➔ Mẫu câu',
+        pool: grammarPool,
+        getPrompt: item => item.meaning,
+        getAnswer: item => item.pattern || item.title,
+        getReading: () => '',
+        speakTarget: 'correctAnswer'
+      };
+    case 'kanji_meaning':
+      return {
+        modeLabel: 'Chữ Hán: Nghĩa Hán Việt',
+        pool: kanjiPool,
+        getPrompt: item => item.character,
+        getAnswer: item => item.meaning,
+        getReading: () => '',
+        speakTarget: 'prompt'
+      };
+    case 'kanji_reading':
+      return {
+        modeLabel: 'Chữ Hán: Âm đọc On/Kun',
+        pool: kanjiPool,
+        getPrompt: item => `${item.character} (${item.meaning})`,
+        getAnswer: item => [item.onyomi, item.kunyomi].filter(x => x && x !== '—').join(' / ') || item.reading || item.meaning,
+        getReading: () => '',
+        speakTarget: 'prompt'
+      };
+    case 'vocab_ja_vi':
+    default:
+      return {
+        modeLabel: 'Từ vựng: Nhật ➔ Việt',
+        pool: vocabPool,
+        getPrompt: item => item.ruby || item.japanese,
+        getAnswer: item => item.meaning,
+        getReading: item => item.reading && item.reading !== item.japanese ? item.reading : '',
+        speakTarget: 'prompt'
+      };
+  }
+}
+
+/**
+ * Builds a full quiz session from items or lessons.
+ * Supports:
+ * - Signature 1: buildQuizSession(items, mode, shuffleQuestions, distractorPool)
+ * - Signature 2: buildQuizSession(lessons, options)
+ */
+export function buildQuizSession(itemsOrLessons, optionsOrMode = 'vocab_ja_vi', shuffleQuestions = true, distractorPool = null) {
+  if (!itemsOrLessons || itemsOrLessons.length === 0) {
+    return { success: false, message: 'Danh sách bài học hoặc mục học trống.', questions: [] };
   }
 
+  // Detect Signature 2: Array of lessons + options object
+  const isLessonArray = typeof optionsOrMode === 'object' || (itemsOrLessons[0] && (itemsOrLessons[0].vocabulary || itemsOrLessons[0].grammar || itemsOrLessons[0].kanji));
+
+  if (isLessonArray && typeof optionsOrMode === 'object') {
+    const options = optionsOrMode;
+    const lessons = itemsOrLessons;
+    const lessonId = options.lessonId || 'all';
+    const contentType = options.contentType || 'all'; // 'all' | 'vocabulary' | 'grammar' | 'kanji'
+    const mode = options.mode || 'all_mix';
+    const onlyReview = Boolean(options.onlyReview);
+    const progressMap = options.progressMap;
+    const username = options.currentUser?.username || 'default';
+    const limit = options.limit && options.limit !== 'all' ? Number(options.limit) : null;
+    const shuffle = options.shuffleQuestions ?? true;
+
+    // Build pools of accessible distractors across all accessible lessons
+    const allVocab = [];
+    const allGrammar = [];
+    const allKanji = [];
+
+    for (const l of lessons) {
+      (l.vocabulary || []).forEach(v => allVocab.push({ ...v, itemType: 'vocabulary', lessonId: l.id, lessonTitle: l.title }));
+      (l.grammar || []).forEach(g => allGrammar.push({ ...g, itemType: 'grammar', lessonId: l.id, lessonTitle: l.title }));
+      (l.kanji || []).forEach(k => allKanji.push({ ...k, itemType: 'kanji', lessonId: l.id, lessonTitle: l.title }));
+    }
+
+    // Determine target lessons
+    const targetLessons = lessonId === 'all' ? lessons : lessons.filter(l => l.id === lessonId);
+
+    // Extract target question items based on contentType
+    let targetItems = [];
+    for (const l of targetLessons) {
+      if (contentType === 'all' || contentType === 'vocabulary') {
+        (l.vocabulary || []).forEach(v => targetItems.push({ ...v, itemType: 'vocabulary', lessonId: l.id, lessonTitle: l.title, cardKey: `${l.id}:vocabulary:${v.id}` }));
+      }
+      if (contentType === 'all' || contentType === 'grammar') {
+        (l.grammar || []).forEach(g => targetItems.push({ ...g, itemType: 'grammar', lessonId: l.id, lessonTitle: l.title, cardKey: `${l.id}:grammar:${g.id}` }));
+      }
+      if (contentType === 'all' || contentType === 'kanji') {
+        (l.kanji || []).forEach(k => targetItems.push({ ...k, itemType: 'kanji', lessonId: l.id, lessonTitle: l.title, cardKey: `${l.id}:kanji:${k.id}` }));
+      }
+    }
+
+    if (targetItems.length === 0) {
+      return { success: false, message: 'Không tìm thấy mục học nào phù hợp với bộ lọc.', questions: [] };
+    }
+
+    // Filter by needsReview if onlyReview is requested
+    if (onlyReview) {
+      targetItems = targetItems.filter(item => {
+        const progressKey = `${username}:quiz:${item.cardKey}`;
+        const rec = progressMap?.get(progressKey) || progressMap?.get(item.cardKey);
+        return Boolean(rec?.needsReview);
+      });
+
+      if (targetItems.length === 0) {
+        return {
+          success: false,
+          error: 'NO_REVIEW_ITEMS',
+          message: 'Bạn chưa có mục nào trong danh sách "Cần ôn tập" trong phạm vi đã chọn (chưa có câu nào làm sai). Bạn hãy bỏ chọn ô "Chỉ làm lại các câu từng trả lời sai" để làm trắc nghiệm bình thường nhé!'
+        };
+      }
+    }
+
+    // Shuffle target items
+    if (shuffle) {
+      targetItems.sort(() => Math.random() - 0.5);
+    }
+
+    // Apply limit if specified
+    if (limit && limit > 0 && targetItems.length > limit) {
+      targetItems = targetItems.slice(0, limit);
+    }
+
+    const questions = [];
+
+    for (const item of targetItems) {
+      // Determine question mode for this specific item
+      let itemMode;
+      if (mode === 'all_mix') {
+        if (item.itemType === 'vocabulary') {
+          itemMode = Math.random() < 0.5 ? 'vocab_ja_vi' : 'vocab_vi_ja';
+        } else if (item.itemType === 'grammar') {
+          itemMode = Math.random() < 0.5 ? 'grammar_meaning' : 'grammar_vi_ja';
+        } else {
+          itemMode = Math.random() < 0.5 ? 'kanji_meaning' : 'kanji_reading';
+        }
+      } else if (mode === 'vocab_mix') {
+        itemMode = Math.random() < 0.5 ? 'vocab_ja_vi' : 'vocab_vi_ja';
+      } else if (mode === 'grammar_mix') {
+        itemMode = Math.random() < 0.5 ? 'grammar_meaning' : 'grammar_vi_ja';
+      } else if (mode === 'kanji_mix') {
+        itemMode = Math.random() < 0.5 ? 'kanji_meaning' : 'kanji_reading';
+      } else {
+        itemMode = mode;
+      }
+
+      const handler = getModeHandlers(itemMode, allVocab, allGrammar, allKanji);
+      const q = generateQuestionChoices(item, handler.pool, handler.getPrompt, handler.getAnswer);
+
+      if (!q.success) {
+        return {
+          success: false,
+          error: q.error,
+          message: q.message,
+          questions: []
+        };
+      }
+
+      questions.push({
+        ...q,
+        mode: itemMode,
+        modeLabel: handler.modeLabel,
+        promptReading: handler.getReading(item),
+        speakText: handler.speakTarget === 'correctAnswer' ? q.correctAnswer : q.prompt,
+        lessonId: item.lessonId,
+        lessonTitle: item.lessonTitle,
+        itemId: item.id,
+        itemType: item.itemType
+      });
+    }
+
+    return {
+      success: true,
+      mode,
+      questions,
+      total: questions.length
+    };
+  }
+
+  // --- Signature 1: Raw items array (original pure logic & backwards compatibility) ---
+  const items = itemsOrLessons;
+  const mode = typeof optionsOrMode === 'string' ? optionsOrMode : 'vocab_ja_vi';
   const pool = distractorPool && distractorPool.length > 0 ? distractorPool : items;
 
-  let getPrompt, getAnswer;
-  if (mode === 'vocab_vi_ja') {
-    getPrompt = item => item.meaning;
-    getAnswer = item => item.ruby || item.japanese;
-  } else if (mode === 'kanji_meaning') {
-    getPrompt = item => item.character;
-    getAnswer = item => item.meaning;
-  } else if (mode === 'kanji_reading') {
-    getPrompt = item => `${item.character} (${item.meaning})`;
-    getAnswer = item => [item.onyomi, item.kunyomi].filter(x => x && x !== '—').join(' / ') || item.reading || item.meaning;
-  } else if (mode === 'grammar_meaning') {
-    getPrompt = item => item.pattern || item.title;
-    getAnswer = item => item.meaning;
-  } else {
-    // Default: vocab_ja_vi
-    getPrompt = item => item.ruby || item.japanese;
-    getAnswer = item => item.meaning;
-  }
+  const handler = getModeHandlers(mode, pool, pool, pool);
 
   const questions = [];
   const questionItems = shuffleQuestions ? [...items].sort(() => Math.random() - 0.5) : [...items];
 
   for (const item of questionItems) {
-    const q = generateQuestionChoices(item, pool, getPrompt, getAnswer);
+    const q = generateQuestionChoices(item, handler.pool, handler.getPrompt, handler.getAnswer);
     if (!q.success) {
       return {
         success: false,
@@ -119,7 +303,17 @@ export function buildQuizSession(items, mode = 'vocab_ja_vi', shuffleQuestions =
         questions: []
       };
     }
-    questions.push(q);
+    questions.push({
+      ...q,
+      mode,
+      modeLabel: handler.modeLabel,
+      promptReading: handler.getReading(item),
+      speakText: handler.speakTarget === 'correctAnswer' ? q.correctAnswer : q.prompt,
+      lessonId: item.lessonId || '',
+      lessonTitle: item.lessonTitle || '',
+      itemId: item.id || '',
+      itemType: item.itemType || 'vocabulary'
+    });
   }
 
   return {

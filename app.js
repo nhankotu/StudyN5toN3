@@ -55,9 +55,11 @@ const state = {
     selectedOption: null,
     answered: false,
     history: [],
-    mode: 'vocab_ja_vi',
-    scope: 'all',
-    onlyReview: false
+    contentType: 'all',
+    mode: 'all_mix',
+    scope: 'current',
+    onlyReview: false,
+    limit: 10
   },
   editor: {
     lesson: null,
@@ -425,40 +427,119 @@ function renderQuiz() {
   const session = state.quiz.session;
 
   if (!session) {
+    const currentContentType = state.quiz.contentType || 'all';
+    const username = state.currentUser?.username || 'default';
+
+    // Calculate how many items need review in the current scope
+    const targetLessons = state.quiz.scope === 'current' && state.lessonId !== 'all'
+      ? state.lessons.filter(l => l.id === state.lessonId)
+      : state.lessons;
+
+    let reviewCount = 0;
+    for (const l of targetLessons) {
+      const checkKeys = [];
+      if (currentContentType === 'all' || currentContentType === 'vocabulary') {
+        (l.vocabulary || []).forEach(v => checkKeys.push(`${l.id}:vocabulary:${v.id}`));
+      }
+      if (currentContentType === 'all' || currentContentType === 'grammar') {
+        (l.grammar || []).forEach(g => checkKeys.push(`${l.id}:grammar:${g.id}`));
+      }
+      if (currentContentType === 'all' || currentContentType === 'kanji') {
+        (l.kanji || []).forEach(k => checkKeys.push(`${l.id}:kanji:${k.id}`));
+      }
+
+      for (const cardKey of checkKeys) {
+        const progressKey = `${username}:quiz:${cardKey}`;
+        const rec = state.progress.get(progressKey) || state.progress.get(cardKey);
+        if (rec?.needsReview) reviewCount++;
+      }
+    }
+
+    let modeOptionsHtml = '';
+    if (currentContentType === 'all') {
+      modeOptionsHtml = `
+        <option value="all_mix" ${state.quiz.mode === 'all_mix' ? 'selected' : ''}>🎲 Trộn tổng hợp toàn bộ (Từ vựng 2 chiều + Mẫu câu + Chữ Hán)</option>
+        <option value="vocab_ja_vi" ${state.quiz.mode === 'vocab_ja_vi' ? 'selected' : ''}>🇯🇵 Chỉ câu Từ vựng: Nhật ➔ Việt</option>
+        <option value="vocab_vi_ja" ${state.quiz.mode === 'vocab_vi_ja' ? 'selected' : ''}>🇻🇳 Chỉ câu Từ vựng: Việt ➔ Nhật</option>
+        <option value="grammar_meaning" ${state.quiz.mode === 'grammar_meaning' ? 'selected' : ''}>文 Chỉ câu Mẫu câu: Ngữ pháp ➔ Ý nghĩa</option>
+        <option value="kanji_reading" ${state.quiz.mode === 'kanji_reading' ? 'selected' : ''}>読 Chỉ câu Chữ Hán: Xem chữ ➔ Chọn âm đọc On/Kun</option>
+        <option value="kanji_meaning" ${state.quiz.mode === 'kanji_meaning' ? 'selected' : ''}>漢 Chỉ câu Chữ Hán: Xem chữ ➔ Chọn nghĩa Hán Việt</option>
+      `;
+    } else if (currentContentType === 'vocabulary') {
+      modeOptionsHtml = `
+        <option value="vocab_mix" ${state.quiz.mode === 'vocab_mix' ? 'selected' : ''}>🎲 Trộn cả 2 chiều: Nhật ➔ Việt & Việt ➔ Nhật</option>
+        <option value="vocab_ja_vi" ${state.quiz.mode === 'vocab_ja_vi' ? 'selected' : ''}>🇯🇵 Tiếng Nhật ➔ Chọn nghĩa Tiếng Việt</option>
+        <option value="vocab_vi_ja" ${state.quiz.mode === 'vocab_vi_ja' ? 'selected' : ''}>🇻🇳 Nghĩa Tiếng Việt ➔ Chọn chữ Nhật</option>
+      `;
+    } else if (currentContentType === 'grammar') {
+      modeOptionsHtml = `
+        <option value="grammar_mix" ${state.quiz.mode === 'grammar_mix' ? 'selected' : ''}>🎲 Trộn cả 2 chiều (Mẫu câu ➔ Nghĩa & Nghĩa ➔ Mẫu câu)</option>
+        <option value="grammar_meaning" ${state.quiz.mode === 'grammar_meaning' ? 'selected' : ''}>文 Xem mẫu câu ➔ Chọn ý nghĩa Tiếng Việt</option>
+        <option value="grammar_vi_ja" ${state.quiz.mode === 'grammar_vi_ja' ? 'selected' : ''}>🇻🇳 Xem ý nghĩa ➔ Chọn mẫu câu tương ứng</option>
+      `;
+    } else if (currentContentType === 'kanji') {
+      modeOptionsHtml = `
+        <option value="kanji_mix" ${state.quiz.mode === 'kanji_mix' ? 'selected' : ''}>🎲 Trộn cả 2 dạng: Nghĩa Hán Việt & Âm đọc On/Kun</option>
+        <option value="kanji_reading" ${state.quiz.mode === 'kanji_reading' ? 'selected' : ''}>読 Xem chữ Hán ➔ Chọn âm đọc On/Kun</option>
+        <option value="kanji_meaning" ${state.quiz.mode === 'kanji_meaning' ? 'selected' : ''}>漢 Xem chữ Hán ➔ Chọn ý nghĩa Hán Việt</option>
+      `;
+    }
+
     // Giao diện cấu hình và bắt đầu Quiz
     return `
       <div class="quiz-setup-card">
         <div class="quiz-setup-header">
           <div class="quiz-badge">❓ BỘ LUYỆN PHẢN XẠ TRẮC NGHIỆM</div>
           <h3>Luyện tập trắc nghiệm 4 lựa chọn</h3>
-          <p>Thuật toán tạo câu hỏi 4 lựa chọn phân biệt từ các bài học bạn có quyền xem, hoàn toàn không dựng đáp án giả. Hệ thống tự động ghi nhận các câu sai vào danh sách cần ôn tập.</p>
+          <p>Tự động tạo câu hỏi 4 lựa chọn phân biệt từ các bài học bạn có quyền xem, hoàn toàn không dựng đáp án giả. Hệ thống tự động ghi nhận câu sai vào danh sách "Cần ôn tập" để bạn rèn luyện lại.</p>
         </div>
 
         <div class="quiz-setup-grid">
           <div class="quiz-config-field">
-            <label for="quizModeSelect">Dạng câu hỏi</label>
-            <select id="quizModeSelect">
-              <option value="vocab_ja_vi" ${state.quiz.mode === 'vocab_ja_vi' ? 'selected' : ''}>🇯🇵 Từ vựng: Tiếng Nhật ➔ Chọn nghĩa Tiếng Việt</option>
-              <option value="vocab_vi_ja" ${state.quiz.mode === 'vocab_vi_ja' ? 'selected' : ''}>🇻🇳 Từ vựng: Nghĩa Tiếng Việt ➔ Chọn chữ Nhật</option>
-              <option value="kanji_meaning" ${state.quiz.mode === 'kanji_meaning' ? 'selected' : ''}>漢 Chữ Hán: Xem chữ Hán ➔ Chọn ý nghĩa Hán Việt</option>
-              <option value="kanji_reading" ${state.quiz.mode === 'kanji_reading' ? 'selected' : ''}>読 Chữ Hán: Xem chữ Hán ➔ Chọn âm đọc On/Kun</option>
-              <option value="grammar_meaning" ${state.quiz.mode === 'grammar_meaning' ? 'selected' : ''}>文 Ngữ pháp: Xem mẫu câu ➔ Chọn ý nghĩa tiếng Việt</option>
+            <label for="quizContentTypeSelect">Nội dung học trắc nghiệm</label>
+            <select id="quizContentTypeSelect">
+              <option value="all" ${currentContentType === 'all' ? 'selected' : ''}>📚 Cả bài (Trộn Từ vựng, Mẫu câu & Chữ Hán)</option>
+              <option value="vocabulary" ${currentContentType === 'vocabulary' ? 'selected' : ''}>あ Chỉ Từ vựng</option>
+              <option value="grammar" ${currentContentType === 'grammar' ? 'selected' : ''}>文 Chỉ Mẫu câu (Ngữ pháp)</option>
+              <option value="kanji" ${currentContentType === 'kanji' ? 'selected' : ''}>漢 Chỉ Chữ Hán</option>
             </select>
           </div>
 
           <div class="quiz-config-field">
-            <label for="quizScopeSelect">Phạm vi câu hỏi</label>
+            <label for="quizModeSelect">Dạng câu hỏi / Hướng trắc nghiệm</label>
+            <select id="quizModeSelect">
+              ${modeOptionsHtml}
+            </select>
+          </div>
+
+          <div class="quiz-config-field">
+            <label for="quizScopeSelect">Phạm vi bài học</label>
             <select id="quizScopeSelect">
-              <option value="current" ${state.quiz.scope === 'current' ? 'selected' : ''}>Chỉ trong bài học đang chọn (${state.lessonId === 'all' ? 'Tất cả' : (state.lessons.find(l=>l.id===state.lessonId)?.title || state.lessonId)})</option>
+              <option value="current" ${state.quiz.scope === 'current' ? 'selected' : ''}>Chỉ trong bài học đang chọn (${state.lessonId === 'all' ? 'Tất cả bài học' : (state.lessons.find(l=>l.id===state.lessonId)?.title || state.lessonId)})</option>
               <option value="all" ${state.quiz.scope === 'all' ? 'selected' : ''}>Toàn bộ các bài học bạn có quyền xem (${state.lessons.length} bài)</option>
             </select>
           </div>
 
           <div class="quiz-config-field">
-            <label class="checkbox-label">
-              <input type="checkbox" id="quizReviewOnlyCheckbox" ${state.quiz.onlyReview ? 'checked' : ''} />
-              <span>Chỉ ôn tập các câu đang trong danh sách <strong>Cần ôn tập</strong> (từng trả lời sai)</span>
+            <label for="quizLimitSelect">Số lượng câu hỏi</label>
+            <select id="quizLimitSelect">
+              <option value="10" ${state.quiz.limit === 10 ? 'selected' : ''}>10 câu</option>
+              <option value="20" ${state.quiz.limit === 20 ? 'selected' : ''}>20 câu</option>
+              <option value="30" ${state.quiz.limit === 30 ? 'selected' : ''}>30 câu</option>
+              <option value="all" ${state.quiz.limit === 'all' ? 'selected' : ''}>Tất cả các câu trong phạm vi</option>
+            </select>
+          </div>
+
+          <div class="quiz-config-field">
+            <label class="checkbox-label" style="${reviewCount === 0 ? 'opacity:0.65;cursor:not-allowed' : ''}">
+              <input type="checkbox" id="quizReviewOnlyCheckbox" ${state.quiz.onlyReview && reviewCount > 0 ? 'checked' : ''} ${reviewCount === 0 ? 'disabled' : ''} />
+              <span>Chỉ làm lại các câu trong danh sách <strong>Cần ôn tập</strong> (từng trả lời sai)</span>
             </label>
+            <div style="font-size:11px;margin-top:4px;padding-left:28px;color:${reviewCount > 0 ? '#6e58e4' : '#8c93a8'}">
+              ${reviewCount > 0
+                ? `🔥 Bạn đang có <strong>${reviewCount}</strong> câu đã từng làm sai cần ôn lại.`
+                : `✦ Bạn chưa có câu nào làm sai (Danh sách cần ôn tập đang trống). Bạn hãy bấm <strong>"▶ Bắt đầu làm trắc nghiệm"</strong> bên dưới để làm bài ngay!`}
+            </div>
           </div>
         </div>
 
@@ -505,6 +586,8 @@ function renderQuiz() {
   const selected = state.quiz.selectedOption;
   $('sectionCount').textContent = `Câu ${qIndex + 1} / ${questions.length}`;
 
+  const speakText = q.speakText || (['vocab_vi_ja', 'grammar_vi_ja'].includes(q.mode) ? q.correctAnswer : q.prompt);
+
   return `
     <div class="quiz-active-layout">
       <div class="quiz-progress-top">
@@ -516,14 +599,14 @@ function renderQuiz() {
       </div>
 
       <div class="quiz-question-box">
-        <span class="quiz-question-type">${h(q.mode.toUpperCase().replace(/_/g, ' '))} · ${h(q.lessonTitle)}</span>
+        <span class="quiz-question-type">${h((q.modeLabel || q.mode).toUpperCase().replace(/_/g, ' '))} · ${h(q.lessonTitle)}</span>
         <div class="quiz-prompt-text" lang="ja">${renderFurigana(q.prompt)}</div>
         ${q.promptReading ? `<div class="quiz-prompt-reading" lang="ja">${h(q.promptReading)}</div>` : ''}
-        <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(q.prompt))}" title="Nghe phát âm">♫</button>
+        <button class="audio-btn" data-action="speak" data-text="${h(stripFurigana(speakText))}" title="Nghe phát âm">♫</button>
       </div>
 
       <div class="quiz-options-grid">
-        ${q.options.map((opt, i) => {
+        ${(q.options || []).map((opt, i) => {
           let btnClass = 'quiz-option-btn';
           if (answered) {
             if (opt.isCorrect) btnClass += ' option-correct';
@@ -1738,22 +1821,35 @@ async function handleAction(button) {
 
   // --- QUIZ ACTIONS ---
   if (action === 'start-quiz-session') {
-    const mode = $('quizModeSelect')?.value || state.quiz.mode;
-    const scope = $('quizScopeSelect')?.value || state.quiz.scope;
-    const onlyReview = $('quizReviewOnlyCheckbox')?.checked ?? state.quiz.onlyReview;
+    const contentType = $('quizContentTypeSelect')?.value || state.quiz.contentType || 'all';
+    const mode = $('quizModeSelect')?.value || state.quiz.mode || 'all_mix';
+    const scope = $('quizScopeSelect')?.value || state.quiz.scope || 'current';
+    const limit = $('quizLimitSelect')?.value || state.quiz.limit || 10;
+    const reviewCheckbox = $('quizReviewOnlyCheckbox');
+    const onlyReview = reviewCheckbox && !reviewCheckbox.disabled ? Boolean(reviewCheckbox.checked) : false;
 
+    state.quiz.contentType = contentType;
     state.quiz.mode = mode;
     state.quiz.scope = scope;
+    state.quiz.limit = limit === 'all' ? 'all' : Number(limit);
     state.quiz.onlyReview = onlyReview;
 
     try {
       const session = buildQuizSession(state.lessons, {
         lessonId: scope === 'current' ? state.lessonId : 'all',
+        contentType,
         mode,
-        limit: 10,
+        limit: state.quiz.limit,
         onlyReview,
-        progressMap: state.progress
+        progressMap: state.progress,
+        currentUser: state.currentUser
       });
+
+      if (!session.success) {
+        notify(session.message);
+        return;
+      }
+
       state.quiz.session = session;
       state.quiz.currentIndex = 0;
       state.quiz.selectedOption = null;
@@ -2361,6 +2457,27 @@ function setupListeners() {
       state.flash.direction = event.target.value;
       state.flash.flipped = false;
       renderView();
+    }
+    if (event.target.id === 'quizContentTypeSelect') {
+      state.quiz.contentType = event.target.value;
+      if (state.quiz.contentType === 'all') state.quiz.mode = 'all_mix';
+      else if (state.quiz.contentType === 'vocabulary') state.quiz.mode = 'vocab_mix';
+      else if (state.quiz.contentType === 'grammar') state.quiz.mode = 'grammar_mix';
+      else if (state.quiz.contentType === 'kanji') state.quiz.mode = 'kanji_mix';
+      renderView();
+    }
+    if (event.target.id === 'quizModeSelect') {
+      state.quiz.mode = event.target.value;
+    }
+    if (event.target.id === 'quizScopeSelect') {
+      state.quiz.scope = event.target.value;
+      renderView();
+    }
+    if (event.target.id === 'quizLimitSelect') {
+      state.quiz.limit = event.target.value === 'all' ? 'all' : Number(event.target.value);
+    }
+    if (event.target.id === 'quizReviewOnlyCheckbox') {
+      state.quiz.onlyReview = event.target.checked;
     }
     if (event.target.id === 'fileInput') {
       if (event.target.files && event.target.files.length) {
